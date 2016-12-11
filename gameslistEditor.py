@@ -59,20 +59,30 @@ class ManageGameXML(object):
 
     def getDataForGame(self, gameName):
 
+        tags = [
+                'path',
+                'name',
+                'desc',
+                'image',
+                'thumbnail',
+                'rating',
+                'releasedate',
+                'developer',
+                'publisher',
+                'genre',
+                'players',
+                'playcount',
+                'lastplayed',
+                ]
+
         for node in self.dom.getElementsByTagName('game'):
             if gameName in [self.getData(node, 'name'),
                             self.getData(node, 'path')]:
 
                 data = dict()
-                data['path']        = self.getData(node, 'path') or 'MISSING FROM XML'
-                data['name']        = self.getData(node, 'name') or 'MISSING FROM XML'
-                data['desc']        = self.getData(node, 'desc') or 'MISSING FROM XML'
-                data['image']       = self.getData(node, 'image') or 'MISSING FROM XML'
-                data['rating']      = self.getData(node, 'rating') or 'MISSING FROM XML'
-                data['releasedate'] = self.getData(node, 'releasedate') or 'MISSING FROM XML'
-                data['developer']   = self.getData(node, 'developer') or 'MISSING FROM XML'
-                data['publisher']   = self.getData(node, 'publisher') or 'MISSING FROM XML'
-                data['genre']       = self.getData(node, 'genre') or 'MISSING FROM XML'
+
+                for tag in tags:
+                    data[tag] = self.getData(node, tag) or ''
 
                 return data
 
@@ -238,6 +248,11 @@ class GameslistGUI(object):
 
         setattr(self, var, editWidget)
 
+        buttonText = 'x'
+        clearButton = urwid.Button(buttonText)
+        clearButton = urwid.AttrMap(clearButton, None, 'reversed')
+        clearButton = urwid.Padding(clearButton, width=len(buttonText)+4)
+
         return urwid.Columns([
             ('pack', labelWidget),
             map
@@ -272,16 +287,19 @@ class GameslistGUI(object):
         applyButton = urwid.AttrMap(applyButton, None, 'reversed')
         applyButton = urwid.Padding(applyButton, width=len(buttonText)+4)
 
-
         body = [
             blank, self.field('path'),
             blank, self.field('name'),
             blank, self.field('image'),
+            blank, self.field('thumbnail'),
             blank, self.field('rating'),
             blank, self.field('releasedate'),
             blank, self.field('developer'),
             blank, self.field('publisher'),
             blank, self.field('genre'),
+            blank, self.field('players'),
+            blank, self.field('playcount'),
+            blank, self.field('lastplayed'),
             blank, self.field('desc', multiline=True),
             blank, applyButton,
             ]
@@ -315,11 +333,15 @@ class GameslistGUI(object):
         self.path.set_edit_text('')
         self.name.set_edit_text('')
         self.image.set_edit_text('')
+        self.thumbnail.set_edit_text('')
         self.rating.set_edit_text('')
         self.releasedate.set_edit_text('')
         self.developer.set_edit_text('')
         self.publisher.set_edit_text('')
         self.genre.set_edit_text('')
+        self.players.set_edit_text('')
+        self.playcount.set_edit_text('')
+        self.lastplayed.set_edit_text('')
         self.desc.set_edit_text('')
 
     def gamesWidgetCallback(self, button, choice):
@@ -333,11 +355,15 @@ class GameslistGUI(object):
         path        = data.get('path', '')
         name        = data.get('name', '')
         image       = data.get('image', '')
+        thumbnail   = data.get('thumbnail', '')
         rating      = data.get('rating', '')
         releasedate = data.get('releasedate', '')
         developer   = data.get('developer', '')
         publisher   = data.get('publisher', '')
         genre       = data.get('genre', '')
+        players     = data.get('players', '')
+        playcount   = data.get('playcount', '')
+        lastplayed  = data.get('lastplayed', '')
         desc        = data.get('desc', '')
 
         releasedate = esStringToReadableDate(releasedate)
@@ -345,11 +371,15 @@ class GameslistGUI(object):
         self.path.set_edit_text(path)
         self.name.set_edit_text(name)
         self.image.set_edit_text(image)
+        self.thumbnail.set_edit_text(thumbnail)
         self.rating.set_edit_text(rating)
         self.releasedate.set_edit_text(releasedate)
         self.developer.set_edit_text(developer)
         self.publisher.set_edit_text(publisher)
         self.genre.set_edit_text(genre)
+        self.players.set_edit_text(players)
+        self.playcount.set_edit_text(playcount)
+        self.lastplayed.set_edit_text(lastplayed)
         self.desc.set_edit_text(desc)
 
 glg = GameslistGUI()
