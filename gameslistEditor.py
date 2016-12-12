@@ -1,8 +1,8 @@
 #! python
 
-
-
 import os
+import re
+import shutil
 from xml.dom.minidom import parse, parseString
 
 import urwid
@@ -11,9 +11,43 @@ from pprint import pprint
 
 ROMS_DIR = '//retropie/roms'
 
+# - Generic ----------------------------------------------------
+
+def backupFile(path):
+
+    sp = os.path.abspath(path)
+    fp, fn = os.path.split(sp)
+    backupdir = os.path.join(fp, '.backup')
+    if not os.path.exists(backupdir):
+        os.mkdir(backupdir)
+
+    matcher = fn + '.backup.\d+'
+    backups = [f for f in os.listdir(backupdir) if re.match(matcher, f)]
+    versons = []
+    for b in backups:
+        try:
+            versons.append(int(b.split('.').pop()))
+        except:
+            pass
+
+    maxVersion = max(versons) if versons else 0
+    version = maxVersion + 1
+
+    tp = os.path.join(backupdir, fn + '.backup.' + str(version))
+    print tp
+    shutil.copyfile(sp, tp)
+
+# - Utils ------------------------------------------------------
 
 def readableDateToEsString(dateStr):
-    pass
+
+    dateStr = re.sub('\D' , '', dateStr)
+
+    if not len(dateStr) == 8 or not dateStr.isdigit():
+        print 'bad input'
+        return '00010101T000000'
+
+    return dateStr + 'T000000'
 
 def esStringToReadableDate(dateStr):
 
@@ -38,6 +72,8 @@ def getSystems():
         if os.path.exists(glpath):
             yield d
 
+# - XML Manager ------------------------------------------------
+
 class ManageGameXML(object):
 
     def __init__(self, system):
@@ -45,49 +81,75 @@ class ManageGameXML(object):
         self.xmlpath = getGamelist(system)
         self.dom = parse(self.xmlpath)
         self.gameProperties = []
+        self.gameDatas = [
+                'path', 'name', 'desc', 'image',
+                'thumbnail', 'rating', 'releasedate',
+                'developer', 'publisher', 'genre',
+                'players', 'playcount', 'lastplayed',
+                ]
+
+    def __getNodeForGame__(self, game):
+
+        for node in self.dom.getElementsByTagName('game'):
+            if self.getData(node, 'name') == game:
+                return node
+
+    def setData(self, parentNode, name, value):
+
+        d = parentNode.getElementsByTagName(name)
+
+        if not value:
+            for item in d:
+                parentNode.removeChild(item)
+            return
+
+        if d:
+            # print dir(d[0])
+            d[0].firstChild.data = str(value)
+        else:
+            textNode = self.dom.createTextNode(str(value))
+            e = self.dom.createElement(name)
+            e.appendChild(textNode)
+            parentNode.appendChild(e)
 
     def getData(self, parentNode, name):
 
         d = parentNode.getElementsByTagName(name)
         return d[0].firstChild.data if d and d[0].firstChild else None
-        #return d[0].firstChild.data if d else None
 
     def getGames(self):
 
         for node in self.dom.getElementsByTagName('game'):
-            yield self.getData(node, 'name') or self.getData(node, 'path')
+            yield self.getData(node, 'name')
 
     def getDataForGame(self, gameName):
 
-        tags = [
-                'path',
-                'name',
-                'desc',
-                'image',
-                'thumbnail',
-                'rating',
-                'releasedate',
-                'developer',
-                'publisher',
-                'genre',
-                'players',
-                'playcount',
-                'lastplayed',
-                ]
+        node = self.__getNodeForGame__(gameName)
+        data = dict()
 
-        for node in self.dom.getElementsByTagName('game'):
-            if gameName in [self.getData(node, 'name'),
-                            self.getData(node, 'path')]:
+        for tag in self.gameDatas:
+            data[tag] = self.getData(node, tag) or ''
 
-                data = dict()
+        return data
 
-                for tag in tags:
-                    data[tag] = self.getData(node, tag) or ''
+    def setDataForGame(self, game, properties={}):
 
-                return data
+        node = self.__getNodeForGame__(game)
+        for key, value in properties.items():
+            self.setData(node, key, value)
 
-    def setDataForGame(self, prop, value):
-        pass
+    def toxml(self):
+
+        newXML = self.dom.toxml()
+        reparsed = parseString(newXML)
+        return '\n'.join([line for line in reparsed.toprettyxml(indent='    '*2).split('\n') if line.strip()])
+
+    def writeXML(self):
+
+        backupFile( self.xmlpath )
+        f = open(self.xmlpath, 'w')
+        f.write(self.toxml())
+        f.close()
 
 # - URWID Below ------------------------------------------------
 
@@ -116,6 +178,9 @@ class GameslistGUI(object):
 
         # do it
         self.loop = urwid.MainLoop(self.frameWidget, self.getPalette(), unhandled_input=self.keypress)
+
+    def start(self):
+
         self.loop.run()
 
     def paletteItm(self, name, fg='default', bg='default', mode=None,
@@ -227,6 +292,8 @@ class GameslistGUI(object):
         self.footer.original_widget = text
 
     def menuButtonList(self, choices, callback=None):
+
+        # editWidget = urwid.Edit('', '', multiline=False)
 
         body = []
         for choice in choices:
@@ -382,6 +449,22 @@ class GameslistGUI(object):
         self.lastplayed.set_edit_text(lastplayed)
         self.desc.set_edit_text(desc)
 
-glg = GameslistGUI()
+if __name__ == '__main__':
+    glg = GameslistGUI().start()
+
+    '''
+    mg = ManageGameXML('n64')
+    game = list(mg.getGames()).pop()
+    data = mg.getDataForGame(game)
+    data['desc'] = 'this was edited!!!!!'
+    data['players'] = ''
+    data['lastplayed'] = ''
+    data['playcount'] = ''
+    data['genre'] = 'cock \'n\' balls'
+    data['image'] = ''
+    mg.setDataForGame(game, data)
+    mg.writeXML()
+    '''
+
 
 
