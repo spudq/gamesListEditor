@@ -34,7 +34,6 @@ def backupFile(path):
     version = maxVersion + 1
 
     tp = os.path.join(backupdir, fn + '.backup.' + str(version))
-    print tp
     shutil.copyfile(sp, tp)
 
 # - Utils ------------------------------------------------------
@@ -83,7 +82,7 @@ class ManageGameXML(object):
         self.gameProperties = []
         self.gameDatas = [
                 'path', 'name', 'desc', 'image',
-                'thumbnail', 'rating', 'releasedate',
+                'rating', 'releasedate',
                 'developer', 'publisher', 'genre',
                 'players', 'playcount', 'lastplayed',
                 ]
@@ -276,6 +275,7 @@ class GameslistGUI(object):
     def getOrMakeManager(self, system):
 
         xmlManager = self.xmlManagers.get(system)
+
         if xmlManager:
             return xmlManager
         else:
@@ -350,17 +350,19 @@ class GameslistGUI(object):
         blank = urwid.Divider()
 
         buttonText = 'Apply Changes'
-        applyButton = urwid.Button(buttonText)
-        applyButton = urwid.AttrMap(applyButton, None, 'reversed')
+        button = urwid.Button(buttonText)
+        applyButton = urwid.AttrMap(button, None, 'reversed')
         applyButton = urwid.Padding(applyButton, width=len(buttonText)+4)
+        urwid.connect_signal(button, 'click', self.saveGameXmlCallback)
 
         body = [
+            blank, applyButton,
             blank, self.field('path'),
             blank, self.field('name'),
             blank, self.field('image'),
-            blank, self.field('thumbnail'),
+            #blank, self.field('thumbnail'),
             blank, self.field('rating'),
-            blank, self.field('releasedate'),
+            blank, self.field('releasedate', 'releasedate(YYYY/MM/DD)'),
             blank, self.field('developer'),
             blank, self.field('publisher'),
             blank, self.field('genre'),
@@ -368,7 +370,6 @@ class GameslistGUI(object):
             blank, self.field('playcount'),
             blank, self.field('lastplayed'),
             blank, self.field('desc', multiline=True),
-            blank, applyButton,
             ]
 
         lw = urwid.SimpleFocusListWalker(body)
@@ -380,6 +381,33 @@ class GameslistGUI(object):
         return widget
 
     # - callbacks --------------------------------------------------------------
+
+    def saveGameXmlCallback(self, button):
+
+        xmlManager = self.getOrMakeManager(self.currentSystem)
+
+        releasedate = self.releasedate.get_edit_text()
+        releasedate = readableDateToEsString(releasedate)
+
+        data = dict(
+            path        = self.path.get_edit_text(),
+            name        = self.name.get_edit_text(),
+            image       = self.image.get_edit_text(),
+            # thumbnail   = self.thumbnail.get_edit_text(),
+            rating      = self.rating.get_edit_text(),
+            releasedate = releasedate,
+            developer   = self.developer.get_edit_text(),
+            publisher   = self.publisher.get_edit_text(),
+            genre       = self.genre.get_edit_text(),
+            players     = self.players.get_edit_text(),
+            playcount   = self.playcount.get_edit_text(),
+            lastplayed  = self.lastplayed.get_edit_text(),
+            desc        = self.desc.get_edit_text(),
+            )
+        xmlManager.setDataForGame(self.currentGame, data)
+        xmlpath = xmlManager.xmlpath
+        xmlManager.writeXML()
+        self.updateFooterText('wrote: ' + xmlpath)
 
     def systemsWidgetCallback(self, button, choice):
 
@@ -400,7 +428,7 @@ class GameslistGUI(object):
         self.path.set_edit_text('')
         self.name.set_edit_text('')
         self.image.set_edit_text('')
-        self.thumbnail.set_edit_text('')
+        # self.thumbnail.set_edit_text('')
         self.rating.set_edit_text('')
         self.releasedate.set_edit_text('')
         self.developer.set_edit_text('')
@@ -422,7 +450,7 @@ class GameslistGUI(object):
         path        = data.get('path', '')
         name        = data.get('name', '')
         image       = data.get('image', '')
-        thumbnail   = data.get('thumbnail', '')
+        # thumbnail   = data.get('thumbnail', '')
         rating      = data.get('rating', '')
         releasedate = data.get('releasedate', '')
         developer   = data.get('developer', '')
@@ -438,7 +466,7 @@ class GameslistGUI(object):
         self.path.set_edit_text(path)
         self.name.set_edit_text(name)
         self.image.set_edit_text(image)
-        self.thumbnail.set_edit_text(thumbnail)
+        # self.thumbnail.set_edit_text(thumbnail)
         self.rating.set_edit_text(rating)
         self.releasedate.set_edit_text(releasedate)
         self.developer.set_edit_text(developer)
@@ -451,20 +479,5 @@ class GameslistGUI(object):
 
 if __name__ == '__main__':
     glg = GameslistGUI().start()
-
-    '''
-    mg = ManageGameXML('n64')
-    game = list(mg.getGames()).pop()
-    data = mg.getDataForGame(game)
-    data['desc'] = 'this was edited!!!!!'
-    data['players'] = ''
-    data['lastplayed'] = ''
-    data['playcount'] = ''
-    data['genre'] = 'cock \'n\' balls'
-    data['image'] = ''
-    mg.setDataForGame(game, data)
-    mg.writeXML()
-    '''
-
 
 
