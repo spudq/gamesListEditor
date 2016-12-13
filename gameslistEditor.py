@@ -11,6 +11,21 @@ from pprint import pprint
 
 ROMS_DIR = '//retropie/roms'
 
+'''
+01 January
+02 February
+03 March
+04 April
+05 May
+06 June
+07 July
+08 August
+09 September
+10 October
+11 November
+12 December
+'''
+
 # - Generic ----------------------------------------------------
 
 def backupFile(path):
@@ -77,6 +92,7 @@ class ManageGameXML(object):
 
     def __init__(self, system):
 
+        self.changes = False
         self.xmlpath = getGamelist(system)
         self.dom = parse(self.xmlpath)
         self.gameProperties = []
@@ -111,6 +127,8 @@ class ManageGameXML(object):
             e.appendChild(textNode)
             parentNode.appendChild(e)
 
+        self.changes = True
+
     def getData(self, parentNode, name):
 
         d = parentNode.getElementsByTagName(name)
@@ -136,6 +154,7 @@ class ManageGameXML(object):
         node = self.__getNodeForGame__(game)
         for key, value in properties.items():
             self.setData(node, key, value)
+        self.changes = True
 
     def toxml(self):
 
@@ -156,9 +175,9 @@ class GameslistGUI(object):
 
     def __init__(self):
 
-        # get systems that have gameslists
+        self.currentSystem = None
+        self.currentGame = None
         self.systems = list(getSystems())
-        # xml parse objects
         self.xmlManagers = dict()
 
         # widget instances
@@ -166,9 +185,18 @@ class GameslistGUI(object):
         self.systemMenu = self.menuWidget('Roms/Systems', self.systems, self.systemsWidgetCallback)
         self.gamesMenu = self.menuWidget('Games')
 
+        button = urwid.Button('test')
+        button = urwid.Filler(button, height = 20)
+        button = urwid.AttrMap(button, 'background')
+        button = urwid.Frame(button)
+
         # layout
         cwidget = urwid.Columns([self.systemMenu, self.gamesMenu])
-        pwidget = urwid.Pile([('weight', 0.5, cwidget), self.mainWidgetInstance])
+        pwidget = urwid.Pile([
+                    ('weight', 0.5, cwidget),
+                    self.mainWidgetInstance,
+                    (2,self.buttonsWidget()),
+                    ])
 
         # footer
         self.footer = urwid.Text('')
@@ -267,11 +295,6 @@ class GameslistGUI(object):
 
     # - utils ------------------------------------------------------------------
 
-    def keypress(self, key):
-
-        if key in ('q', 'Q'):
-            raise urwid.ExitMainLoop()
-
     def getOrMakeManager(self, system):
 
         xmlManager = self.xmlManagers.get(system)
@@ -283,6 +306,54 @@ class GameslistGUI(object):
             self.xmlManagers[system] = manager
             return manager
 
+    def saveGameXml(self):
+
+        if not self.currentSystem:
+            self.updateFooterText('no system data to update')
+            return
+
+        xmlManager = self.getOrMakeManager(self.currentSystem)
+
+        if not xmlManager.changes:
+            self.updateFooterText('no changes to save')
+            return
+
+        xmlpath = xmlManager.xmlpath
+        xmlManager.writeXML()
+        self.updateFooterText('wrote: ' + xmlpath)
+
+    def updateGameXml(self):
+
+        if not self.currentSystem:
+            self.updateFooterText('no system data to update')
+            return
+
+        xmlManager = self.getOrMakeManager(self.currentSystem)
+
+        if not xmlManager.changes:
+            self.updateFooterText('no changes to save')
+            return
+
+        releasedate = self.releasedate.get_edit_text()
+        releasedate = readableDateToEsString(releasedate)
+
+        data = dict(
+            path        = self.path.get_edit_text(),
+            name        = self.name.get_edit_text(),
+            image       = self.image.get_edit_text(),
+            # thumbnail   = self.thumbnail.get_edit_text(),
+            rating      = self.rating.get_edit_text(),
+            releasedate = releasedate,
+            developer   = self.developer.get_edit_text(),
+            publisher   = self.publisher.get_edit_text(),
+            genre       = self.genre.get_edit_text(),
+            players     = self.players.get_edit_text(),
+            playcount   = self.playcount.get_edit_text(),
+            lastplayed  = self.lastplayed.get_edit_text(),
+            desc        = self.desc.get_edit_text(),
+            )
+        xmlManager.setDataForGame(self.currentGame, data)
+
     # - Widget helpers ---------------------------------------------------------
 
     def updateFooterText(self, text):
@@ -293,8 +364,6 @@ class GameslistGUI(object):
 
     def menuButtonList(self, choices, callback=None):
 
-        # editWidget = urwid.Edit('', '', multiline=False)
-
         body = []
         for choice in choices:
             button = urwid.Button(choice)
@@ -304,26 +373,22 @@ class GameslistGUI(object):
             body.append( button )
         return body
 
-    def field(self, var, label=None, defaultText='', multiline=False):
+    def field(self, var, label=None, defaultText='', multiline=False, callback=None):
 
         label = label or var
         label = label + ': '
         labelWidget = urwid.Text(('background', label))
-
         editWidget = urwid.Edit('', defaultText, multiline=multiline)
         map = urwid.AttrMap(editWidget, 'textItem', 'edittext')
-
         setattr(self, var, editWidget)
 
-        buttonText = 'x'
-        clearButton = urwid.Button(buttonText)
-        clearButton = urwid.AttrMap(clearButton, None, 'reversed')
-        clearButton = urwid.Padding(clearButton, width=len(buttonText)+4)
+        return urwid.Columns([('pack', labelWidget), map])
 
-        return urwid.Columns([
-            ('pack', labelWidget),
-            map
-            ])
+    def minimalButton(self, *args, **kwargs):
+
+        button = urwid.Button(*args, **kwargs)
+        buttonText = button.get_label()
+        return urwid.Padding(button, width=len(buttonText)+4)
 
     # - Widgets ----------------------------------------------------------------
 
@@ -334,6 +399,19 @@ class GameslistGUI(object):
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=padding, right=padding)
         widget = urwid.LineBox(widget, title)
+        widget = urwid.AttrMap(widget, 'background')
+
+        return widget
+
+    def buttonsWidget(self):
+
+        applyButton = self.minimalButton('Save Changes')
+        urwid.connect_signal(applyButton.original_widget, 'click', self.saveGameXmlCallback)
+
+        gridFlow = urwid.GridFlow([applyButton], 20, 0, 0, 'left')
+        lw = urwid.SimpleFocusListWalker([gridFlow])
+        box = urwid.ListBox(lw)
+        widget = urwid.Padding(box, left=2, right=2)
         widget = urwid.AttrMap(widget, 'background')
 
         return widget
@@ -349,14 +427,7 @@ class GameslistGUI(object):
 
         blank = urwid.Divider()
 
-        buttonText = 'Apply Changes'
-        button = urwid.Button(buttonText)
-        applyButton = urwid.AttrMap(button, None, 'reversed')
-        applyButton = urwid.Padding(applyButton, width=len(buttonText)+4)
-        urwid.connect_signal(button, 'click', self.saveGameXmlCallback)
-
         body = [
-            blank, applyButton,
             blank, self.field('path'),
             blank, self.field('name'),
             blank, self.field('image'),
@@ -382,34 +453,19 @@ class GameslistGUI(object):
 
     # - callbacks --------------------------------------------------------------
 
+    def keypress(self, key):
+
+        if key in ('q', 'Q'):
+            raise urwid.ExitMainLoop()
+
     def saveGameXmlCallback(self, button):
 
-        xmlManager = self.getOrMakeManager(self.currentSystem)
-
-        releasedate = self.releasedate.get_edit_text()
-        releasedate = readableDateToEsString(releasedate)
-
-        data = dict(
-            path        = self.path.get_edit_text(),
-            name        = self.name.get_edit_text(),
-            image       = self.image.get_edit_text(),
-            # thumbnail   = self.thumbnail.get_edit_text(),
-            rating      = self.rating.get_edit_text(),
-            releasedate = releasedate,
-            developer   = self.developer.get_edit_text(),
-            publisher   = self.publisher.get_edit_text(),
-            genre       = self.genre.get_edit_text(),
-            players     = self.players.get_edit_text(),
-            playcount   = self.playcount.get_edit_text(),
-            lastplayed  = self.lastplayed.get_edit_text(),
-            desc        = self.desc.get_edit_text(),
-            )
-        xmlManager.setDataForGame(self.currentGame, data)
-        xmlpath = xmlManager.xmlpath
-        xmlManager.writeXML()
-        self.updateFooterText('wrote: ' + xmlpath)
+        self.updateGameXml()
+        self.saveGameXml()
 
     def systemsWidgetCallback(self, button, choice):
+
+        self.updateGameXml()
 
         self.currentSystem = choice
         self.currentGame = None
@@ -440,6 +496,8 @@ class GameslistGUI(object):
         self.desc.set_edit_text('')
 
     def gamesWidgetCallback(self, button, choice):
+
+        self.updateGameXml()
 
         self.currentGame = choice
         self.updateFooterText(self.currentSystem + ', ' + choice)
