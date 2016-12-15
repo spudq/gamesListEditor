@@ -3,6 +3,9 @@
 import os
 import re
 import shutil
+import urllib
+import urllib2
+
 from xml.dom.minidom import parse, parseString
 
 import urwid
@@ -86,9 +89,129 @@ def getSystems():
         if os.path.exists(glpath):
             yield d
 
+# - Scraper ----------------------------------------------------
+
+class Scraper(object):
+
+    def __init__(self, system, searchQuery):
+
+        # userAgent can be anything but python apperently
+        # so I told gamesdb that this is my browser
+        self.userAgent = 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
+        self.system = system
+        self.searchQuery = searchQuery
+        self.systemName = self.__getSystemName__(system)
+
+    def __getSystemName__(self, system):
+        systems = {
+            '3do' : '3DO',
+            'amiga' : 'Amiga',
+            'amstradcpc' : 'Amstrad CPC',
+            'arcade' : 'Arcade',
+            'atari2600' : 'Atari 2600',
+            'atari5200' : 'Atari 5200',
+            'atari7800' : 'Atari 7800',
+            'atarilynx' : 'Atari Lynx',
+            'atarijaguar' : 'Atari Jaguar',
+            'atarijaguarcd' : 'Atari Jaguar CD',
+            'atarixe' : 'Atari XE',
+            'colecovision' : 'Colecovision',
+            'c64' : 'Commodore 64',
+            'intellivision' : 'Intellivision',
+            'macintosh' : 'Mac OS',
+            'xbox' : 'Microsoft Xbox',
+            'xbox360' : 'Microsoft Xbox 360',
+            'neogeo' : 'NeoGeo',
+            'ngp' : 'Neo Geo Pocket',
+            'ngpc' : 'Neo Geo Pocket Color',
+            'n3ds' : 'Nintendo 3DS',
+            'n64' : 'Nintendo 64',
+            'nds' : 'Nintendo DS',
+            'nes' : 'Nintendo Entertainment System (NES)',
+            'gb' : 'Nintendo Game Boy',
+            'gba' : 'Nintendo Game Boy Advance',
+            'gbc' : 'Nintendo Game Boy Color',
+            'gc' : 'Nintendo GameCube',
+            'wii' : 'Nintendo Wii',
+            'wiiu' : 'Nintendo Wii U',
+            'pc' : 'PC',
+            'sega32x' : 'Sega 32X',
+            'segacd' : 'Sega CD',
+            'dreamcast' : 'Sega Dreamcast',
+            'gamegear' : 'Sega Game Gear',
+            'genesis' : 'Sega Genesis',
+            'mastersystem' : 'Sega Master System',
+            'megadrive' : 'Sega Mega Drive',
+            'saturn' : 'Sega Saturn',
+            'psx' : 'Sony Playstation',
+            'ps2' : 'Sony Playstation 2',
+            'ps3' : 'Sony Playstation 3',
+            'ps4' : 'Sony Playstation 4',
+            'psvita' : 'Sony Playstation Vita',
+            'psp' : 'Sony PSP',
+            'snes' : 'Super Nintendo (SNES)',
+            'pcengine' : 'TurboGrafx 16',
+            'wonderswan' : 'WonderSwan',
+            'wonderswancolor' : 'WonderSwan Color',
+            'zxspectrum' : 'Sinclair ZX Spectrum',
+        }
+        return systems.get(system)
+
+    def __makeRequest__(self, url, request={}):
+
+        querry = urllib.urlencode(request)
+        headers = {'User-Agent' : self.userAgent}
+        request = urllib2.Request(url, querry, headers=headers)
+        fileObject =  urllib2.urlopen(request)
+        return fileObject
+
+    def __xmlValue__(self, parent, tag):
+
+        elements = parent.getElementsByTagName(tag)
+        if len(elements) > 1:
+            raise RuntimeError('more than one tag for ' + tag)
+        if elements:
+            node = elements[0].firstChild
+            return node.data if node else None
+
+    def simplifySearchSting(self, search):
+
+        match = re.match('(.*)\(.*\).*', search)
+        search = match.group(1) if match else search
+
+        return search
+
+    def gameSearch(self):
+
+        systemName = self.systemName
+        searchQuery = self.searchQuery
+
+        searchQuery = self.simplifySearchSting(searchQuery)
+
+        results = dict()
+
+        url = 'http://thegamesdb.net/api/GetGamesList.php'
+        querry = {
+            'name': searchQuery,
+            #'exactname' : searchQuery,
+            'platform' : systemName,
+            }
+        fileObject = self.__makeRequest__(url, querry)
+
+        dom = parse(fileObject)
+        for node in dom.getElementsByTagName('Game'):
+
+            gameTitle = self.__xmlValue__(node, 'GameTitle')
+            gameId = self.__xmlValue__(node, 'id')
+            relaseDate = self.__xmlValue__(node, 'ReleaseDate')
+
+            results[gameTitle] = {'gameId':gameId,
+                                  'relaseDate':relaseDate}
+        return results
+
 # - XML Manager ------------------------------------------------
 
-class ManageGameXML(object):
+class ManageGameListXML(object):
 
     def __init__(self, system):
 
@@ -169,6 +292,20 @@ class ManageGameXML(object):
         f.write(self.toxml())
         f.close()
 
+
+'''
+m = ManageGameListXML('snes')
+i = m.getGames()
+gamesearch = i.next()
+gamesearch = i.next()
+gamesearch = i.next()
+gamesearch = i.next()
+print gamesearch
+s = Scraper('snes', gamesearch)
+print sorted(s.gameSearch().keys())
+'''
+
+
 # - URWID Below ------------------------------------------------
 
 class GameslistGUI(object):
@@ -180,6 +317,8 @@ class GameslistGUI(object):
         self.systems = list(getSystems())
         self.xmlManagers = dict()
 
+        self.panelOpen = False
+
         # widget instances
         self.mainWidgetInstance = self.mainEditWidget()
         self.systemMenu = self.menuWidget('Roms/Systems', self.systems, self.systemsWidgetCallback)
@@ -187,7 +326,7 @@ class GameslistGUI(object):
 
         button = urwid.Button('test')
         button = urwid.Filler(button, height = 20)
-        button = urwid.AttrMap(button, 'background')
+        button = urwid.AttrMap(button, 'primaryBackground')
         button = urwid.Frame(button)
 
         # layout
@@ -200,11 +339,28 @@ class GameslistGUI(object):
 
         # footer
         self.footer = urwid.Text('')
-        self.footer = urwid.AttrMap(self.footer, 'infotext')
+        self.footer = urwid.AttrMap(self.footer, 'footerText')
         self.frameWidget = urwid.Frame(pwidget, header=None, footer=self.footer)
+        self.frameWidget = self.main_shadow(self.frameWidget)
+
+        self.body = urwid.WidgetPlaceholder(self.frameWidget)
 
         # do it
-        self.loop = urwid.MainLoop(self.frameWidget, self.getPalette(), unhandled_input=self.keypress)
+        self.loop = urwid.MainLoop(self.body, self.palette(), unhandled_input=self.keypress)
+
+    def main_shadow(self, w):
+
+        bg = urwid.AttrWrap(urwid.SolidFill(u"\u2592"), 'deepBackground')
+        shadow = urwid.AttrWrap(urwid.SolidFill(u" "), 'dropShadow')
+
+        bg = urwid.Overlay( shadow, bg,
+            ('fixed left', 3), ('fixed right', 1),
+            ('fixed top', 2), ('fixed bottom', 1))
+        w = urwid.Overlay( w, bg,
+            ('fixed left', 2), ('fixed right', 3),
+            ('fixed top', 1), ('fixed bottom', 2))
+
+        return w
 
     def start(self):
 
@@ -247,49 +403,37 @@ class GameslistGUI(object):
         setting = (name, fg, bg, mono, fghq, bghq)
         return setting
 
-    def getPalette(self):
-
-        '''
-        fg - foreground options:
-            'white' 'black' 'brown' 'yellow'
-            'dark red' 'dark green' 'dark blue'
-            'dark cyan' 'dark magenta' 'dark gray'
-            'light red' 'light green' 'light blue'
-            'light cyan' 'light magenta' 'light gray'
-
-        mode - foregroundSetting options:
-            'bold' 'underline' 'blink' 'standout'
-
-        bg - background options:
-            'dark red' 'dark green' 'dark blue'
-            'dark cyan' 'dark magenta' 'light gray'
-            'black' 'brown'
-
-        '''
+    def palette(self):
 
         # color palette
         palette = [
 
                 # for button selections
-                self.paletteItm('reversed', 'standout', mode='bold'),
+                self.paletteItm('activeButton', 'standout', mode='bold'),
 
                 # for body text
-                self.paletteItm('textItem', 'yellow', 'dark blue', mode='bold'),
-
-                # background color
-                self.paletteItm('background', bg='dark blue'),
-
-                # for footer text
-                self.paletteItm('infotext', fg='light blue', bg='light gray'),
+                self.paletteItm('bodyText', 'yellow', 'dark blue', mode='bold'),
 
                 # color for text being actively edited
                 self.paletteItm('edittext', fg='white', bg='black'),
+
+                # background color
+                self.paletteItm('primaryBackground', bg='dark blue'),
+
+                # for footer text
+                self.paletteItm('footerText', fg='dark blue', bg='light gray'),
+
+                # for drop shadow
+                self.paletteItm('dropShadow', bg='black'),
+
+                # for farmost background
+                self.paletteItm('deepBackground', fg='black', bg='light gray'),
 
                 ]
 
         return palette
 
-    def exit_program(self, button):
+    def exit_program(self, button=None):
 
         raise urwid.ExitMainLoop()
 
@@ -302,7 +446,7 @@ class GameslistGUI(object):
         if xmlManager:
             return xmlManager
         else:
-            manager = ManageGameXML(system)
+            manager = ManageGameListXML(system)
             self.xmlManagers[system] = manager
             return manager
 
@@ -327,12 +471,12 @@ class GameslistGUI(object):
         if not self.currentSystem:
             self.updateFooterText('no system data to update')
             return
+        if not self.currentGame:
+            self.updateFooterText('no changes to save')
+            return
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
-        if not xmlManager.changes:
-            self.updateFooterText('no changes to save')
-            return
 
         releasedate = self.releasedate.get_edit_text()
         releasedate = readableDateToEsString(releasedate)
@@ -359,7 +503,7 @@ class GameslistGUI(object):
     def updateFooterText(self, text):
 
         text = urwid.Text(' ' + text)
-        text = urwid.AttrMap(text, 'infotext')
+        text = urwid.AttrMap(text, 'footerText')
         self.footer.original_widget = text
 
     def menuButtonList(self, choices, callback=None):
@@ -369,7 +513,7 @@ class GameslistGUI(object):
             button = urwid.Button(choice)
             if callback:
                 urwid.connect_signal(button, 'click', callback, choice)
-            button = urwid.AttrMap(button, None, focus_map='reversed')
+            button = urwid.AttrMap(button, None, focus_map='activeButton')
             body.append( button )
         return body
 
@@ -377,9 +521,9 @@ class GameslistGUI(object):
 
         label = label or var
         label = label + ': '
-        labelWidget = urwid.Text(('background', label))
+        labelWidget = urwid.Text(('primaryBackground', label))
         editWidget = urwid.Edit('', defaultText, multiline=multiline)
-        map = urwid.AttrMap(editWidget, 'textItem', 'edittext')
+        map = urwid.AttrMap(editWidget, 'bodyText', 'edittext')
         setattr(self, var, editWidget)
 
         return urwid.Columns([('pack', labelWidget), map])
@@ -399,7 +543,7 @@ class GameslistGUI(object):
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=padding, right=padding)
         widget = urwid.LineBox(widget, title)
-        widget = urwid.AttrMap(widget, 'background')
+        widget = urwid.AttrMap(widget, 'primaryBackground')
 
         return widget
 
@@ -408,19 +552,30 @@ class GameslistGUI(object):
         applyButton = self.minimalButton('Save Changes')
         urwid.connect_signal(applyButton.original_widget, 'click', self.saveGameXmlCallback)
 
-        gridFlow = urwid.GridFlow([applyButton], 20, 0, 0, 'left')
+        closeButtom = self.minimalButton('Quit')
+        urwid.connect_signal(closeButtom.original_widget, 'click', self.exit_program)
+
+        body = [
+            applyButton,
+            closeButtom,
+            ]
+
+        gridFlow = urwid.GridFlow(body, 20, 0, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
-        widget = urwid.AttrMap(widget, 'background')
+        widget = urwid.AttrMap(widget, 'primaryBackground')
 
         return widget
 
-    def emptyBoxWidget(self):
+    def emptyBoxWidget(self, title='Content Goes Here', text=''):
+
+        text = urwid.Text(text)
+        fill = urwid.Filler(text)
 
         widget = urwid.SolidFill()
-        widget = urwid.LineBox(widget, 'Content Goes in here')
-        widget = urwid.AttrMap(widget, 'background')
+        widget = urwid.LineBox(fill, title)
+        widget = urwid.AttrMap(widget, 'primaryBackground')
         return widget
 
     def mainEditWidget(self):
@@ -447,9 +602,86 @@ class GameslistGUI(object):
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
         widget = urwid.LineBox(widget, 'Game Information')
-        widget = urwid.AttrMap(widget, 'background')
+        widget = urwid.AttrMap(widget, 'primaryBackground')
 
         return widget
+
+    # - actions ----------------------------------------------------------------
+
+    def openPopupWindow(self, widget=None, size=50):
+
+        widget = widget or self.emptyBoxWidget()
+        overlay = urwid.Overlay(
+                    top_w=widget,
+                    bottom_w=self.frameWidget,
+                    align='center',
+                    width=('relative', size),
+                    valign='middle',
+                    height=('relative', size),
+                    min_width=None,
+                    min_height=None,
+                    left=-1,
+                    right=0,
+                    top=0,
+                    bottom=0
+                    )
+        self.body.original_widget = overlay
+
+    def closePopupWindow(self):
+
+        self.body.original_widget = self.frameWidget
+
+    def popupDescription(self):
+
+        if not self.panelOpen:
+            if self.currentSystem and self.currentGame:
+                title = self.currentGame
+                xmlManager = self.getOrMakeManager(self.currentSystem)
+                data = xmlManager.getDataForGame(self.currentGame)
+                text = data.get('desc', '')
+            else:
+                title = 'Nothing Selected'
+                text = ''
+
+            popup = self.emptyBoxWidget(title, text)
+            self.openPopupWindow(popup)
+            self.panelOpen = True
+
+        else:
+            self.closePopupWindow()
+            self.panelOpen = False
+
+    def popupScrapeChoces(self):
+
+        if not self.panelOpen:
+            if self.currentSystem and self.currentGame:
+
+                title = self.currentGame
+
+                scr = Scraper(self.currentSystem, title)
+                results = scr.gameSearch()
+
+                popup = self.menuWidget(
+                        title,
+                        choices=results,
+                        callback=None,
+                        )
+
+                self.openPopupWindow(popup)
+                self.panelOpen = True
+
+            else:
+
+                title = 'Nothing Selected'
+                text = ''
+                popup = self.emptyBoxWidget(title, text)
+                self.openPopupWindow(popup)
+                self.panelOpen = True
+
+        else:
+            self.closePopupWindow()
+            self.panelOpen = False
+        pass
 
     # - callbacks --------------------------------------------------------------
 
@@ -457,6 +689,9 @@ class GameslistGUI(object):
 
         if key in ('q', 'Q'):
             raise urwid.ExitMainLoop()
+
+        if key in ('s', 'S'):
+            self.popupScrapeChoces()
 
     def saveGameXmlCallback(self, button):
 
@@ -470,12 +705,13 @@ class GameslistGUI(object):
         self.currentSystem = choice
         self.currentGame = None
 
+        '''
         response = urwid.Text('You chose {} \n'.format(choice))
         button = urwid.Button('Ok')
-
-        reversedbutton = urwid.AttrMap(button, None, focus_map='reversed')
+        reversedbutton = urwid.AttrMap(button, None, focus_map='activeButton')
         pile = urwid.Pile([response, reversedbutton])
         filler = urwid.Filler(pile)
+        '''
 
         games = self.getOrMakeManager(choice).getGames()
         self.gamesMenu.original_widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
@@ -535,7 +771,74 @@ class GameslistGUI(object):
         self.lastplayed.set_edit_text(lastplayed)
         self.desc.set_edit_text(desc)
 
+# - Alternate Colors -------------------------------------------------------
+
+class GreenTheme(GameslistGUI):
+    def palette(self):
+
+        # color palette
+        palette = [
+
+                # for button selections
+                self.paletteItm('activeButton', 'light green', bg='black', mode='standout'),
+
+                # for body text
+                self.paletteItm('bodyText', 'dark green', 'black', mode='bold'),
+
+                # color for text being actively edited
+                self.paletteItm('edittext', fg='light green', bg='black', mode='bold'),
+
+                # background color
+                self.paletteItm('primaryBackground', fg='dark green', bg='black'),
+
+                # for footer text
+                self.paletteItm('footerText', 'dark green', bg='black', mode='standout'),
+
+                # for drop shadow
+                self.paletteItm('dropShadow', bg='black'),
+
+                # for farmost background
+                self.paletteItm('deepBackground', fg='dark green', bg='black'),
+
+                ]
+
+        return palette
+
+class Altername(GameslistGUI):
+    def palette(self):
+        # color palette
+        palette = [
+
+                # for button selections
+                self.paletteItm('activeButton', 'dark cyan', bg='black', mode='standout'),
+
+                # for body text
+                self.paletteItm('bodyText', 'black', bg='light gray', mode='bold'),
+
+                # color for text being actively edited
+                self.paletteItm('edittext', fg='black', bg='light gray', mode='bold'),
+
+                # background color
+                self.paletteItm('primaryBackground', fg='black', bg='light gray'),
+
+                # for footer text
+                self.paletteItm('footerText', mode='standout'),
+
+                # for drop shadow
+                self.paletteItm('dropShadow', bg='black'),
+
+                # for farmost background
+                self.paletteItm('deepBackground', fg='black', bg='light blue'),
+
+                ]
+
+        return palette
+
+
 if __name__ == '__main__':
-    glg = GameslistGUI().start()
+    #GameslistGUI().start()
+    #GreenTheme().start()
+    #Altername().start()
+    pass
 
 
