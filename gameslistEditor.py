@@ -74,6 +74,9 @@ def readableDateToEsString(dateStr):
 
 def esStringToReadableDate(dateStr):
 
+    if not dateStr:
+        return ''
+
     dateStr = dateStr.split('T').pop(0)
     yyyy = dateStr[:4]
     mm = dateStr[4:6]
@@ -245,8 +248,12 @@ class ManageGameListXML(object):
             return
 
         if d:
-            # print dir(d[0])
-            d[0].firstChild.data = str(value)
+            if d[0].childNodes:
+                d[0].firstChild.data = str(value)
+            else:
+                textNode = self.dom.createTextNode(str(value))
+                d[0].appendChild(textNode)
+                # print d[0].toxml()
         else:
             textNode = self.dom.createTextNode(str(value))
             e = self.dom.createElement(name)
@@ -296,16 +303,17 @@ class ManageGameListXML(object):
         f.close()
 
 '''
-m = ManageGameListXML('snes')
+m = ManageGameListXML('atari2600')
 i = m.getGames()
-gamesearch = i.next()
-gamesearch = i.next()
-gamesearch = i.next()
-gamesearch = i.next()
-print gamesearch
-s = Scraper('snes', gamesearch)
-print sorted(s.gameSearch().keys())
+game = list(i)[2]
+scrapedData = Scraper('atari2600', game).gameSearch()
+date = scrapedData.get(game, {}).get('relaseDate')
+for key, value in m.getDataForGame(game).items():
+    print key + ':', value or 'None'
+print
+m.setDataForGame(game, {'releasedate':readableDateToEsString(date)})
 '''
+
 
 # - URWID Below ------------------------------------------------
 
@@ -589,7 +597,7 @@ class GameslistGUI(object):
             blank, self.field('image'),
             #blank, self.field('thumbnail'),
             blank, self.field('rating'),
-            blank, self.field('releasedate', 'releasedate(YYYY/MM/DD) MM/DD/YYYY'),
+            blank, self.field('releasedate', 'releasedate(MM/DD/YYYY)'),
             blank, self.field('developer'),
             blank, self.field('publisher'),
             blank, self.field('genre'),
@@ -845,8 +853,7 @@ class Altername(GameslistGUI):
 
 if __name__ == '__main__':
     GameslistGUI().start()
-    #GreenTheme().start()
-    #Altername().start()
-    pass
+    # GreenTheme().start()
+    # Altername().start()
 
 
