@@ -11,23 +11,13 @@ from xml.dom.minidom import parse, parseString
 import urwid
 
 from pprint import pprint
+from functools import partial
 
 ROMS_DIR = '//retropie/roms'
 
-'''
-01 January
-02 February
-03 March
-04 April
-05 May
-06 June
-07 July
-08 August
-09 September
-10 October
-11 November
-12 December
-'''
+MONTHS = ['jan', 'feb', 'mar', 'apr',
+          'may', 'jun', 'jul', 'aug',
+          'sep', 'oct', 'nov', 'dec']
 
 # - Generic ----------------------------------------------------
 
@@ -58,24 +48,37 @@ def backupFile(path):
 
 def readableDateToEsString(dateStr):
 
-    dateStr = re.sub('\D' , '', dateStr)
+    dateStr = re.findall(r'[\w]+', dateStr)
 
-    if not len(dateStr) == 8 or not dateStr.isdigit():
+    if not len(dateStr) == 3:
+
         print 'bad input'
         return '00010101T000000'
 
-    return dateStr + 'T000000'
+    mm, dd, yyyy = dateStr
+
+    if not all([i.isdigit() for i in [dd, yyyy]]):
+
+        print 'bad input', dd, yyyy
+        return '00010101T000000'
+
+    if not mm.isdigit():
+        mm = mm[:3].lower()
+        if mm in MONTHS:
+            mm = str(MONTHS.index(mm) + 1).zfill(2)
+        else:
+            print 'bad input', mm
+            return '00010101T000000'
+
+    return yyyy+mm+dd + 'T000000'
 
 def esStringToReadableDate(dateStr):
 
-    if not len(dateStr) == 15:
-        return dateStr
-
+    dateStr = dateStr.split('T').pop(0)
     yyyy = dateStr[:4]
     mm = dateStr[4:6]
     dd = dateStr[6:8]
-
-    return '/'.join([ yyyy, mm, dd ])
+    return '/'.join([ mm, dd, yyyy ])
 
 def getGamelist(system):
 
@@ -292,7 +295,6 @@ class ManageGameListXML(object):
         f.write(self.toxml())
         f.close()
 
-
 '''
 m = ManageGameListXML('snes')
 i = m.getGames()
@@ -304,7 +306,6 @@ print gamesearch
 s = Scraper('snes', gamesearch)
 print sorted(s.gameSearch().keys())
 '''
-
 
 # - URWID Below ------------------------------------------------
 
@@ -588,7 +589,7 @@ class GameslistGUI(object):
             blank, self.field('image'),
             #blank, self.field('thumbnail'),
             blank, self.field('rating'),
-            blank, self.field('releasedate', 'releasedate(YYYY/MM/DD)'),
+            blank, self.field('releasedate', 'releasedate(YYYY/MM/DD) MM/DD/YYYY'),
             blank, self.field('developer'),
             blank, self.field('publisher'),
             blank, self.field('genre'),
@@ -606,7 +607,7 @@ class GameslistGUI(object):
 
         return widget
 
-    # - actions ----------------------------------------------------------------
+    # - popups -----------------------------------------------------------------
 
     def openPopupWindow(self, widget=None, size=50):
 
@@ -626,72 +627,79 @@ class GameslistGUI(object):
                     bottom=0
                     )
         self.body.original_widget = overlay
+        self.panelOpen = widget
 
-    def closePopupWindow(self):
+    def closePopupWindow(self, *args):
 
         self.body.original_widget = self.frameWidget
+        self.panelOpen = None
 
-    def popupDescription(self):
-
-        if not self.panelOpen:
-            if self.currentSystem and self.currentGame:
-                title = self.currentGame
-                xmlManager = self.getOrMakeManager(self.currentSystem)
-                data = xmlManager.getDataForGame(self.currentGame)
-                text = data.get('desc', '')
-            else:
-                title = 'Nothing Selected'
-                text = ''
-
-            popup = self.emptyBoxWidget(title, text)
-            self.openPopupWindow(popup)
-            self.panelOpen = True
-
-        else:
-            self.closePopupWindow()
-            self.panelOpen = False
-
-    def popupScrapeChoces(self):
+    def togglePopupWindow(self, widget=None, size=50):
 
         if not self.panelOpen:
-            if self.currentSystem and self.currentGame:
-
-                title = self.currentGame
-
-                scr = Scraper(self.currentSystem, title)
-                results = scr.gameSearch()
-
-                popup = self.menuWidget(
-                        title,
-                        choices=results,
-                        callback=None,
-                        )
-
-                self.openPopupWindow(popup)
-                self.panelOpen = True
-
-            else:
-
-                title = 'Nothing Selected'
-                text = ''
-                popup = self.emptyBoxWidget(title, text)
-                self.openPopupWindow(popup)
-                self.panelOpen = True
-
+            widget = self.openPopupWindow(widget=widget, size=size)
         else:
             self.closePopupWindow()
-            self.panelOpen = False
-        pass
+
+    def scraperChoices(self):
+
+        if self.currentSystem and self.currentGame:
+            title = self.currentGame
+            scr = Scraper(self.currentSystem, title)
+            results = scr.gameSearch()
+            menu = self.menuWidget(
+                    title,
+                    choices=results,
+                    callback=self.scraperChoicesCallback)
+            self.gameSearchResults = results
+            return menu
+        else:
+            title = 'Nothing Selected'
+            return self.emptyBoxWidget(title, '')
 
     # - callbacks --------------------------------------------------------------
 
     def keypress(self, key):
 
+        if key in ('t', 'T'):
+            popup = self.emptyBoxWidget()
+            self.togglePopupWindow(popup)
+
         if key in ('q', 'Q'):
             raise urwid.ExitMainLoop()
 
         if key in ('s', 'S'):
-            self.popupScrapeChoces()
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+    def scraperChoicesCallback(self, button, choice, data=None):
+
+        bodyText = self.gameSearchResults
+
+        data = bodyText.get(choice)
+        date = data.get('relaseDate', '')
+
+        oldDate = self.releasedate.get_edit_text()
+        string = str(oldDate) + ' --> ' + str(date)
+
+        self.closePopupWindow()
+
+        response = urwid.Text(string)
+        button = urwid.Button('Ok', self.scraperOkButtonAction, date)
+        button2 = urwid.Button('Cancel', self.closePopupWindow)
+        reversedbutton = urwid.AttrMap(button, None, focus_map='activeButton')
+        reversedbutton2 = urwid.AttrMap(button2, None, focus_map='activeButton')
+        pile = urwid.Pile([response, reversedbutton, reversedbutton2])
+        filler = urwid.Filler(pile)
+        widget = urwid.LineBox(filler, '')
+        widget = urwid.AttrMap(widget, 'primaryBackground')
+
+        # widget = self.emptyBoxWidget('', str(date))
+        self.togglePopupWindow(widget)
+
+    def scraperOkButtonAction(self, button, date):
+        self.releasedate.set_edit_text(date)
+        self.closePopupWindow()
 
     def saveGameXmlCallback(self, button):
 
@@ -836,7 +844,7 @@ class Altername(GameslistGUI):
 
 
 if __name__ == '__main__':
-    #GameslistGUI().start()
+    GameslistGUI().start()
     #GreenTheme().start()
     #Altername().start()
     pass
