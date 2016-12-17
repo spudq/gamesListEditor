@@ -5,6 +5,12 @@ import re
 import shutil
 import urllib
 import urllib2
+import codecs
+import difflib
+import argparse
+
+from collections import OrderedDict
+from operator import itemgetter
 
 from xml.dom.minidom import parse, parseString
 
@@ -70,6 +76,8 @@ def readableDateToEsString(dateStr):
             print 'bad input', mm
             return '00010101T000000'
 
+    dd = dd.zfill(2)
+
     return yyyy+mm+dd + 'T000000'
 
 def esStringToReadableDate(dateStr):
@@ -99,13 +107,14 @@ def getSystems():
 
 class Scraper(object):
 
-    def __init__(self, system, searchQuery):
+    def __init__(self, system, searchQuery, timeout=None):
 
         # userAgent can be anything but python apperently
         # so I told gamesdb that this is my browser
         self.userAgent = 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
         self.system = system
         self.searchQuery = searchQuery
+        self.timeout = timeout
         self.systemName = self.__getSystemName__(system)
 
     def __getSystemName__(self, system):
@@ -134,6 +143,7 @@ class Scraper(object):
             'n64' : 'Nintendo 64',
             'nds' : 'Nintendo DS',
             'nes' : 'Nintendo Entertainment System (NES)',
+            'mame-mame4all': 'Arcade',
             'gb' : 'Nintendo Game Boy',
             'gba' : 'Nintendo Game Boy Advance',
             'gbc' : 'Nintendo Game Boy Color',
@@ -168,7 +178,7 @@ class Scraper(object):
         querry = urllib.urlencode(request)
         headers = {'User-Agent' : self.userAgent}
         request = urllib2.Request(url, querry, headers=headers)
-        fileObject =  urllib2.urlopen(request)
+        fileObject =  urllib2.urlopen(request, timeout=self.timeout)
         return fileObject
 
     def __xmlValue__(self, parent, tag):
@@ -180,6 +190,29 @@ class Scraper(object):
             node = elements[0].firstChild
             return node.data if node else None
 
+    def get_bigrams(self, string):
+        '''
+        Takes a string and returns a list of bigrams
+        '''
+        s = string.lower()
+        return [s[i:i+2] for i in xrange(len(s) - 1)]
+
+    def string_similarity(self, str1, str2):
+        '''
+        Perform bigram comparison between two strings
+        and return a percentage match in decimal form
+        '''
+        pairs1 = self.get_bigrams(str1)
+        pairs2 = self.get_bigrams(str2)
+        union  = len(pairs1) + len(pairs2)
+        hit_count = 0
+        for x in pairs1:
+            for y in pairs2:
+                if x == y:
+                    hit_count += 1
+                    break
+        return (2.0 * hit_count) / union
+
     def simplifySearchSting(self, search):
 
         match = re.match('(.*)\(.*\).*', search)
@@ -187,11 +220,10 @@ class Scraper(object):
 
         return search
 
-    def gameSearch(self):
+    def gameSearch(self, sort=True):
 
         systemName = self.systemName
         searchQuery = self.searchQuery
-
         searchQuery = self.simplifySearchSting(searchQuery)
 
         results = dict()
@@ -204,16 +236,40 @@ class Scraper(object):
             }
         fileObject = self.__makeRequest__(url, querry)
 
+        # get xml results
         dom = parse(fileObject)
         for node in dom.getElementsByTagName('Game'):
-
             gameTitle = self.__xmlValue__(node, 'GameTitle')
             gameId = self.__xmlValue__(node, 'id')
-            relaseDate = self.__xmlValue__(node, 'ReleaseDate')
+            releasedate = self.__xmlValue__(node, 'ReleaseDate')
+            results[gameTitle] = {u'gameId':gameId,
+                                  u'releasedate':releasedate}
 
-            results[gameTitle] = {'gameId':gameId,
-                                  'relaseDate':relaseDate}
-        return results
+        if not sort:
+            return results
+
+        # get sorting order lookup
+        skeys = list()
+        for key, data in results.items():
+            ss = self.string_similarity(self.searchQuery, key)
+            # str(ss).ljust(15, '0'), key
+            skeys.append([ss, key])
+
+        sortedResults = list()
+        for i, title in reversed(sorted(skeys, key=itemgetter(0))):
+            sortedResults.append((title, results.get(title)))
+
+        return OrderedDict(sortedResults)
+
+    def dataSearch(self, gameID):
+
+        url = 'http://thegamesdb.net/api/GetGame.php'
+        querry = {
+            'id': gameID,
+            'platform' : self.systemName,
+            }
+        fileObject = self.__makeRequest__(url, querry)
+        print fileObject.read()
 
 # - XML Manager ------------------------------------------------
 
@@ -240,6 +296,9 @@ class ManageGameListXML(object):
 
     def setData(self, parentNode, name, value):
 
+        if isinstance(value, str):
+            value = unicode(value, errors='ignore')
+
         d = parentNode.getElementsByTagName(name)
 
         if not value:
@@ -247,15 +306,16 @@ class ManageGameListXML(object):
                 parentNode.removeChild(item)
             return
 
+        # value = value.encode('utf-8')
+
         if d:
             if d[0].childNodes:
-                d[0].firstChild.data = str(value)
+                d[0].firstChild.data = value
             else:
-                textNode = self.dom.createTextNode(str(value))
+                textNode = self.dom.createTextNode(value)
                 d[0].appendChild(textNode)
-                # print d[0].toxml()
         else:
-            textNode = self.dom.createTextNode(str(value))
+            textNode = self.dom.createTextNode(value)
             e = self.dom.createElement(name)
             e.appendChild(textNode)
             parentNode.appendChild(e)
@@ -265,7 +325,9 @@ class ManageGameListXML(object):
     def getData(self, parentNode, name):
 
         d = parentNode.getElementsByTagName(name)
-        return d[0].firstChild.data if d and d[0].firstChild else None
+        data = d[0].firstChild.data if d and d[0].firstChild else None
+        data = data.encode('utf-8') if data else None
+        return data
 
     def getGames(self):
 
@@ -278,7 +340,7 @@ class ManageGameListXML(object):
         data = dict()
 
         for tag in self.gameDatas:
-            data[tag] = self.getData(node, tag) or ''
+            data[tag] = self.getData(node, tag) or u''
 
         return data
 
@@ -298,22 +360,43 @@ class ManageGameListXML(object):
     def writeXML(self):
 
         backupFile( self.xmlpath )
-        f = open(self.xmlpath, 'w')
-        f.write(self.toxml())
-        f.close()
+
+        xmlOutPath = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test.xml'
+        xmlOutPath = self.xmlpath
+
+        with open(xmlOutPath, 'w') as f:
+            f = codecs.lookup('utf-8')[3](f)
+            self.dom.writexml(f, encoding='utf-8')
 
 '''
-m = ManageGameListXML('atari2600')
+m = ManageGameListXML('nes')
 i = m.getGames()
-game = list(i)[2]
-scrapedData = Scraper('atari2600', game).gameSearch()
-date = scrapedData.get(game, {}).get('relaseDate')
-for key, value in m.getDataForGame(game).items():
-    print key + ':', value or 'None'
-print
-m.setDataForGame(game, {'releasedate':readableDateToEsString(date)})
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+game = i.next()
+
+s = Scraper('nes', game)
+d = s.gameSearch().items()[0][1]
+gameId = d.get('gameId')
+s.dataSearch(gameId)
 '''
 
+'''
+m = ManageGameListXML('mame-mame4all')
+game = 'Choplifter'
+data = m.getDataForGame(game)
+pprint (data)
+m.setDataForGame(game, data)
+data = m.getDataForGame(game)
+pprint (data)
+'''
 
 # - URWID Below ------------------------------------------------
 
@@ -330,7 +413,7 @@ class GameslistGUI(object):
 
         # widget instances
         self.mainWidgetInstance = self.mainEditWidget()
-        self.systemMenu = self.menuWidget('Roms/Systems', self.systems, self.systemsWidgetCallback)
+        self.systemMenu = self.menuWidget('Game Systems', self.systems, self.systemsWidgetCallback)
         self.gamesMenu = self.menuWidget('Games')
 
         button = urwid.Button('test')
@@ -653,8 +736,11 @@ class GameslistGUI(object):
 
         if self.currentSystem and self.currentGame:
             title = self.currentGame
+            title = title.split('(')[0] if '(' in title else title
             scr = Scraper(self.currentSystem, title)
             results = scr.gameSearch()
+
+
             menu = self.menuWidget(
                     title,
                     choices=results,
@@ -685,7 +771,7 @@ class GameslistGUI(object):
         bodyText = self.gameSearchResults
 
         data = bodyText.get(choice)
-        date = data.get('relaseDate', '')
+        date = data.get('releasedate', u'')
 
         oldDate = self.releasedate.get_edit_text()
         string = str(oldDate) + ' --> ' + str(date)
@@ -820,7 +906,7 @@ class GreenTheme(GameslistGUI):
 
         return palette
 
-class Altername(GameslistGUI):
+class GrayTheme(GameslistGUI):
     def palette(self):
         # color palette
         palette = [
@@ -850,10 +936,23 @@ class Altername(GameslistGUI):
 
         return palette
 
+def parseArgs():
+    desc = 'Tool to edit gamelist.xml files'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('-th',
+                    help='green or gray')
+
+    args = parser.parse_args()
+    return args
 
 if __name__ == '__main__':
-    GameslistGUI().start()
-    # GreenTheme().start()
-    # Altername().start()
+
+    theme = parseArgs().th
+    if theme == 'green':
+        GreenTheme().start()
+    elif theme == 'gray':
+        GrayTheme().start()
+    else:
+        GameslistGUI().start()
 
 
