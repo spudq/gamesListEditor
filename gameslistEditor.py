@@ -271,9 +271,23 @@ class Scraper(object):
             'platform' : self.systemName,
             }
         fileObject = self.__makeRequest__(url, querry)
-        # fileObject.read()
         dom = parse(fileObject)
-        rating = self.__xmlValue__(dom, 'Rating')
+
+        '''
+        image
+        thumbnail
+        genre
+        '''
+
+        return dict(
+            name = self.__xmlValue__(dom, 'GameTitle'),
+            date = self.__xmlValue__(dom, 'ReleaseDate'),
+            rating = self.__xmlValue__(dom, 'Rating'),
+            developer = self.__xmlValue__(dom, 'Developer'),
+            publisher = self.__xmlValue__(dom, 'Publisher'),
+            players = self.__xmlValue__(dom, 'Players'),
+            desc = self.__xmlValue__(dom, 'Overview'),
+            )
 
 # - XML Manager ------------------------------------------------
 
@@ -470,33 +484,24 @@ class ManageGameListXML(object):
 
 def test():
 
+    '''
     mgl = ManageGameListXML('mastersystem')
     games = mgl.findMissingGames()
     for game in games:
         mgl.addGame(game)
 
     print mgl.toxml()
-
-
     '''
+
+
     m = ManageGameListXML('nes')
     i = m.getGames()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
-    game = i.next()
     game = i.next()
 
     s = Scraper('nes', game)
     d = s.gameSearch().items()[0][1]
     gameId = d.get('gameId')
     print s.dataSearch(gameId)
-    '''
 
     '''
     m = ManageGameListXML('mame-mame4all')
@@ -925,7 +930,13 @@ class GameslistGUI(object):
         if key in ('q', 'Q', 'esc'):
             raise urwid.ExitMainLoop()
 
-        if key in ('s', 'S'):
+        if key == 's':
+            self.scraperMode = 'date only'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key == 'S':
+            self.scraperMode = 'full'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
@@ -935,27 +946,107 @@ class GameslistGUI(object):
     def scraperChoicesCallback(self, button, choice, data=None):
 
         bodyText = self.gameSearchResults
-
         data = bodyText.get(choice)
+
         date = data.get('releasedate', u'')
+        gameId = data.get('gameId')
 
-        oldDate = self.releasedate.get_edit_text()
-        string = str(oldDate) + ' --> ' + str(date)
+        if self.scraperMode == 'date only':
 
+            oldDate = self.releasedate.get_edit_text()
+            string = str(oldDate) + ' --> ' + str(date)
+
+            self.closePopupWindow()
+
+            response = urwid.Text(string)
+            button_ok = urwid.Button('Ok', self.scraperOkButtonAction, date)
+            button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
+            button_cancel = urwid.Button('Cancel', self.closePopupWindow)
+            button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+            pile = urwid.Pile([response, button_ok, button_cancel])
+            filler = urwid.Filler(pile)
+            widget = urwid.LineBox(filler, '')
+            widget = urwid.AttrMap(widget, 'primaryBackground')
+
+            self.togglePopupWindow(widget)
+
+        if self.scraperMode == 'full':
+
+            self.closePopupWindow()
+
+            scr = Scraper(self.currentSystem, self.currentGame)
+            data = scr.dataSearch(gameId)
+
+            oldName      = self.name.get_edit_text()
+            oldImage     = self.image.get_edit_text()
+            oldRating    = self.rating.get_edit_text()
+            oldDate      = self.releasedate.get_edit_text()
+            oldDeveloper = self.developer.get_edit_text()
+            oldPublisher = self.publisher.get_edit_text()
+            oldGenre     = self.genre.get_edit_text()
+            oldPlayers   = self.players.get_edit_text()
+            oldDesc      = self.desc.get_edit_text()
+
+            pile = urwid.Pile([
+                urwid.Text('oldName:' + oldName),
+                urwid.Text('oldRating:' + oldRating),
+                urwid.Text('oldDate:' + oldDate),
+                urwid.Text('oldDeveloper:' + oldDeveloper),
+                urwid.Text('oldPublisher:' + oldPublisher),
+                urwid.Text('oldGenre:' + oldGenre),
+                urwid.Text('oldPlayers:' + oldPlayers),
+                urwid.Text('oldDesc:' + oldDesc),
+
+                urwid.Text('\n-->\n'),
+
+                urwid.Text('newName: {}'.format( data.get('name', '') )),
+                urwid.Text('newRating: {}'.format( data.get('rating', '') )),
+                urwid.Text('newDate: {}'.format( data.get('date', '') )),
+                urwid.Text('newDeveloper: {}'.format( data.get('developer', '') )),
+                urwid.Text('newPublisher: {}'.format( data.get('publisher', '') )),
+                urwid.Text('newGenre: {}'.format( data.get('genre', '') )),
+                urwid.Text('newPlayers: {}'.format( data.get('players', '') )),
+                urwid.Text('newDesc: {}'.format( data.get('desc', '') )),
+
+                urwid.Text('\n'),
+
+                ])
+
+            button_ok = urwid.Button('Ok', self.fullScraperOkButtonAction, data)
+            button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
+            button_cancel = urwid.Button('Cancel', self.closePopupWindow)
+            button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+
+            # fillerl = urwid.Filler(pile)
+            lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
+            fillerl = urwid.ListBox(lw)
+
+            widget = urwid.LineBox(fillerl, '')
+            widget = urwid.AttrMap(widget, 'primaryBackground')
+
+            # cwidget = urwid.Columns([self.systemMenu, self.gamesMenu])
+
+            self.togglePopupWindow(widget, size=70)
+
+    def fullScraperOkButtonAction(self, button, data):
+
+        name = data.get('name', '')
+        rating = data.get('rating', '')
+        date = data.get('date', '')
+        developer = data.get('developer', '')
+        publisher = data.get('publisher', '')
+        # genre = data.get('genre', '')
+        players = data.get('players', '')
+        desc = data.get('desc', '')
+
+        # self.name.set_edit_text('')
+        self.rating.set_edit_text(rating) if rating else None
+        self.releasedate.set_edit_text(date) if date else None
+        self.developer.set_edit_text(developer) if developer else None
+        self.publisher.set_edit_text(publisher) if publisher else None
+        self.players.set_edit_text(players) if players else None
+        self.desc.set_edit_text(desc) if desc else None
         self.closePopupWindow()
-
-        response = urwid.Text(string)
-        button = urwid.Button('Ok', self.scraperOkButtonAction, date)
-        button2 = urwid.Button('Cancel', self.closePopupWindow)
-        reversedbutton = urwid.AttrMap(button, None, focus_map='activeButton')
-        reversedbutton2 = urwid.AttrMap(button2, None, focus_map='activeButton')
-        pile = urwid.Pile([response, reversedbutton, reversedbutton2])
-        filler = urwid.Filler(pile)
-        widget = urwid.LineBox(filler, '')
-        widget = urwid.AttrMap(widget, 'primaryBackground')
-
-        # widget = self.emptyBoxWidget('', str(date))
-        self.togglePopupWindow(widget)
 
     def scraperOkButtonAction(self, button, date):
         self.releasedate.set_edit_text(date)
@@ -975,7 +1066,6 @@ class GameslistGUI(object):
 
         self.gameEditHolder.original_widget = self.blankWidget
 
-
         '''
         response = urwid.Text('You chose {} \n'.format(choice))
         button = urwid.Button('Ok')
@@ -984,7 +1074,7 @@ class GameslistGUI(object):
         filler = urwid.Filler(pile)
         '''
 
-        games = self.getOrMakeManager(choice).getGames()
+        games = sorted(self.getOrMakeManager(choice).getGames())
         self.gamesMenu.original_widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
         self.updateFooterText(getGamelist(choice))
 
@@ -1018,7 +1108,6 @@ class GameslistGUI(object):
             self.refreshGames()
             self.updateFooterText('game list out of date')
             return
-
 
         path        = data.get('path', '')
         name        = data.get('name', '')
