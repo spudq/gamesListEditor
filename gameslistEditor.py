@@ -21,6 +21,7 @@ from functools import partial
 
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
+ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
 
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
@@ -423,6 +424,9 @@ class ManageGameListXML(object):
         node = self.__getNodeForGame__(gameName)
         data = dict()
 
+        if not node:
+            return data
+
         for tag in self.gameDatas:
             data[tag] = self.getData(node, tag) or u''
 
@@ -518,20 +522,18 @@ class GameslistGUI(object):
         self.panelOpen = False
 
         # widget instances
-        self.mainWidgetInstance = self.mainEditWidget()
         self.systemMenu = self.menuWidget('Game Systems', self.systems, self.systemsWidgetCallback)
         self.gamesMenu = self.menuWidget('Games')
+        self.gameEditWidget = self.mainEditWidget()
+        self.blankWidget = self.emptyBoxWidget('Game Information')
 
-        button = urwid.Button('test')
-        button = urwid.Filler(button, height = 20)
-        button = urwid.AttrMap(button, 'primaryBackground')
-        button = urwid.Frame(button)
+        self.gameEditHolder = urwid.WidgetPlaceholder(self.blankWidget)
 
         # layout
         cwidget = urwid.Columns([self.systemMenu, self.gamesMenu])
         pwidget = urwid.Pile([
                     ('weight', 0.5, cwidget),
-                    self.mainWidgetInstance,
+                    self.gameEditHolder,
                     (2,self.buttonsWidget()),
                     ])
 
@@ -675,6 +677,8 @@ class GameslistGUI(object):
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
+        if not self.currentGame in list(xmlManager.getGames()):
+            return
 
         releasedate = self.releasedate.get_edit_text()
         releasedate = readableDateToEsString(releasedate)
@@ -711,9 +715,13 @@ class GameslistGUI(object):
         for game in games:
             xmlManager.addGame(game)
 
-        self.systemsWidgetCallback(None, self.currentSystem)
+        self.refreshGames()
         xmlpath = xmlManager.xmlpath
         self.updateFooterText('updated: ' + xmlpath + ' with {} games'.format(len(games)))
+
+    def refreshGames(self):
+
+        self.systemsWidgetCallback(None, self.currentSystem)
 
     # - Widget helpers ---------------------------------------------------------
 
@@ -876,15 +884,45 @@ class GameslistGUI(object):
             title = 'Nothing Selected'
             return self.emptyBoxWidget(title, '')
 
+    def helpWindow(self):
+
+        title = 'Help / Information'
+
+        padding = 2
+
+        body = [
+            urwid.Text(''),
+            urwid.Text('<F1> open this panel'),
+            urwid.Text('<t> not yet implemented panel'),
+            urwid.Text('<s> scrape date for current game'),
+            urwid.Text('<i> import missing games'),
+            urwid.Text('<q>, <esc> close this program'),
+            ]
+
+        lw = urwid.SimpleFocusListWalker(body)
+        box = urwid.ListBox(lw)
+        widget = urwid.Padding(box, left=padding, right=padding)
+        widget = urwid.LineBox(widget, title)
+        widget = urwid.AttrMap(widget, 'primaryBackground')
+        return widget
+
     # - callbacks --------------------------------------------------------------
 
     def keypress(self, key):
+
+        # show key names
+        # self.updateFooterText(str(key))
+        # return
+
+        if key == 'f1':
+            popup = self.helpWindow()
+            self.togglePopupWindow(popup)
 
         if key in ('t', 'T'):
             popup = self.emptyBoxWidget()
             self.togglePopupWindow(popup)
 
-        if key in ('q', 'Q'):
+        if key in ('q', 'Q', 'esc'):
             raise urwid.ExitMainLoop()
 
         if key in ('s', 'S'):
@@ -935,6 +973,9 @@ class GameslistGUI(object):
         self.currentSystem = choice
         self.currentGame = None
 
+        self.gameEditHolder.original_widget = self.blankWidget
+
+
         '''
         response = urwid.Text('You chose {} \n'.format(choice))
         button = urwid.Button('Ok')
@@ -969,7 +1010,15 @@ class GameslistGUI(object):
         self.updateFooterText(self.currentSystem + ', ' + choice)
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
+
+        self.gameEditHolder.original_widget = self.gameEditWidget
+
         data = xmlManager.getDataForGame(choice)
+        if not data:
+            self.refreshGames()
+            self.updateFooterText('game list out of date')
+            return
+
 
         path        = data.get('path', '')
         name        = data.get('name', '')
