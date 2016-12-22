@@ -20,6 +20,7 @@ from pprint import pprint
 from functools import partial
 
 ROMS_DIR = '//retropie/roms'
+ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
 
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
@@ -269,7 +270,9 @@ class Scraper(object):
             'platform' : self.systemName,
             }
         fileObject = self.__makeRequest__(url, querry)
-        print fileObject.read()
+        # fileObject.read()
+        dom = parse(fileObject)
+        rating = self.__xmlValue__(dom, 'Rating')
 
 # - XML Manager ------------------------------------------------
 
@@ -279,6 +282,7 @@ class ManageGameListXML(object):
 
         self.changes = False
         self.xmlpath = getGamelist(system)
+        self.system = system
         self.dom = parse(self.xmlpath)
         self.gameProperties = []
         self.gameDatas = [
@@ -293,6 +297,83 @@ class ManageGameListXML(object):
         for node in self.dom.getElementsByTagName('game'):
             if self.getData(node, 'name') == game:
                 return node
+
+    def __extPerSystem__(self):
+        '''
+        This big ol' list I scraped from the wikis, maybe not everything is correct
+        adds a lot of lines to the script but for now I want just one file
+        '''
+        exts = {
+            '3do': ['.iso'],
+            'amiga': ['.adf'],
+            'amstradcpc': ['.dsk', '.cpc'],
+            'apple2': ['.dsk'],
+            'atari2600': ['.bin', '.a26', '.rom', '.zip', '.gz'],
+            'atari800': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
+            'atari5200': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
+            'atari7800': ['.a78', '.bin'],
+            'atarijaguar': ['.j64', '.jag'],
+            'atarilynx': ['.lnx'],
+            'atarist': ['.st', '.stx', '.img', '.rom', '.raw', '.ipf', '.ctr'],
+            'coco': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+            'coleco': ['.bin', '.col', '.rom', '.zip'],
+            'c64': ['.crt', '.d64', '.g64', '.t64', '.tap', '.x64'],
+            'daphne': [''],
+            'dragon32': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+            'dreamcast': ['.cdi', '.gdi'],
+            'fba': ['.zip'],
+            'neogeo': ['.zip'],
+            'gc': ['.iso'],
+            'gamegear': [''],
+            'gb': ['.gb'],
+            'gbc': ['.gbc'],
+            'gba': ['.gba'],
+            'intellivision': ['.int', '.bin'],
+            'macintosh': ['.img', '.rom', '.dsk', '.sit'],
+            'mame-mame4all': ['.zip'],
+            'mame-advmame': ['.zip'],
+            'mame-libretro': ['.zip'],
+            'mastersystem': ['.sms'],
+            'megadrive': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
+            'genesis': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
+            'msx': ['.rom', '.mx1', '.mx2', '.col', '.dsk'],
+            'n64': ['.z64', '.n64', '.v64'],
+            'nds': ['.nds', '.bin'],
+            'nes': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
+            'fds': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
+            'neogeo': [''],
+            'oric': ['.dsk', '.tap'],
+            'pc': ['.com', '.sh', '.bat', '.exe'],
+            'pcengine': ['.pce'],
+            'psp': ['.cso', '.iso', '.pbp'],
+            'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc', '.z', '.znx'],
+            'ps2': ['.iso', '.img', '.bin', '.mdf', '.z', '.z2', '.bz2', '.dump', '.cso', '.ima', '.gz'],
+            'samcoupe': ['.dsk', '.mgt', '.sbt', '.sad'],
+            'saturn': ['.bin', '.iso', '.mdf'],
+            'scummvm': ['.sh', '.svm'],
+            'sega32x': ['.32x', '.smd', '.bin', '.md'],
+            'segacd': ['.cue', '.bin', '.iso'],
+            'sg-1000': ['.sg', '.zip'],
+            'snes': ['.zip', '.smc', '.sfc', '.fig', '.swc'],
+            'ti99': ['.ctg'],
+            'trs-80': ['.dsk'],
+            'vectrex': ['.vec', '.gam', '.bin'],
+            'videopac': ['.bin'],
+            'wii': ['.iso'],
+            'wonderswan': ['.ws'],
+            'wonderswancolor': ['.wsc'],
+            'zmachine': ['.dat', '.zip', '.z1', '.z2', '.z3', '.z4', '.z5', '.z6', '.z7', '.z8'],
+            'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi', '.mgt', '.img', '.trd', '.scl', '.dsk']
+        }
+        return exts.get(self.system)
+
+    def findMissingGames(self):
+
+        exts = self.__extPerSystem__()
+        path = os.path.join(ROMS_DIR, self.system)
+        gamesOnDisc = [f for f in os.listdir(path) if any(e for e in exts if f.lower().endswith(e.lower()))]
+        gamesInXML = [g.split('/').pop() for g in list(self.getGames(False)) if '/' in g]
+        return list(set(gamesOnDisc) - set(gamesInXML))
 
     def setData(self, parentNode, name, value):
 
@@ -329,10 +410,13 @@ class ManageGameListXML(object):
         data = data.encode('utf-8') if data else None
         return data
 
-    def getGames(self):
+    def getGames(self, asName=True):
 
         for node in self.dom.getElementsByTagName('game'):
-            yield self.getData(node, 'name')
+            if asName:
+                yield self.getData(node, 'name')
+            else:
+                yield self.getData(node, 'path')
 
     def getDataForGame(self, gameName):
 
@@ -360,43 +444,65 @@ class ManageGameListXML(object):
     def writeXML(self):
 
         backupFile( self.xmlpath )
-
-        xmlOutPath = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test.xml'
         xmlOutPath = self.xmlpath
 
         with open(xmlOutPath, 'w') as f:
             f = codecs.lookup('utf-8')[3](f)
             self.dom.writexml(f, encoding='utf-8')
 
-'''
-m = ManageGameListXML('nes')
-i = m.getGames()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
-game = i.next()
+    def addGame(self, fileName):
 
-s = Scraper('nes', game)
-d = s.gameSearch().items()[0][1]
-gameId = d.get('gameId')
-s.dataSearch(gameId)
-'''
+        gameRoot = self.dom.firstChild
 
-'''
-m = ManageGameListXML('mame-mame4all')
-game = 'Choplifter'
-data = m.getDataForGame(game)
-pprint (data)
-m.setDataForGame(game, data)
-data = m.getDataForGame(game)
-pprint (data)
-'''
+        if not gameRoot.nodeName == 'gameList':
+            raise RuntimeError('invalid gamelist.xml')
+
+        gameNode = self.dom.createElement('game')
+        gameRoot.appendChild(gameNode)
+        gameName = os.path.splitext(fileName)[0]
+
+        self.setData(gameNode, 'path', './' + fileName)
+        self.setData(gameNode, 'name', gameName)
+
+def test():
+
+    mgl = ManageGameListXML('mastersystem')
+    games = mgl.findMissingGames()
+    for game in games:
+        mgl.addGame(game)
+
+    print mgl.toxml()
+
+
+    '''
+    m = ManageGameListXML('nes')
+    i = m.getGames()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+    game = i.next()
+
+    s = Scraper('nes', game)
+    d = s.gameSearch().items()[0][1]
+    gameId = d.get('gameId')
+    print s.dataSearch(gameId)
+    '''
+
+    '''
+    m = ManageGameListXML('mame-mame4all')
+    game = 'Choplifter'
+    data = m.getDataForGame(game)
+    pprint (data)
+    m.setDataForGame(game, data)
+    data = m.getDataForGame(game)
+    pprint (data)
+    '''
 
 # - URWID Below ------------------------------------------------
 
@@ -529,7 +635,7 @@ class GameslistGUI(object):
 
         raise urwid.ExitMainLoop()
 
-    # - utils ------------------------------------------------------------------
+    # - actions ----------------------------------------------------------------
 
     def getOrMakeManager(self, system):
 
@@ -589,6 +695,25 @@ class GameslistGUI(object):
             desc        = self.desc.get_edit_text(),
             )
         xmlManager.setDataForGame(self.currentGame, data)
+
+    def addMissingGames(self):
+
+        if not self.currentSystem:
+            self.updateFooterText('no system selected')
+            return
+
+        xmlManager = self.getOrMakeManager(self.currentSystem)
+        games = xmlManager.findMissingGames()
+        if not games:
+            self.updateFooterText('no new games to add')
+            return
+
+        for game in games:
+            xmlManager.addGame(game)
+
+        self.systemsWidgetCallback(None, self.currentSystem)
+        xmlpath = xmlManager.xmlpath
+        self.updateFooterText('updated: ' + xmlpath + ' with {} games'.format(len(games)))
 
     # - Widget helpers ---------------------------------------------------------
 
@@ -766,6 +891,9 @@ class GameslistGUI(object):
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
+        if key in ('i', 'I'):
+            self.addMissingGames()
+
     def scraperChoicesCallback(self, button, choice, data=None):
 
         bodyText = self.gameSearchResults
@@ -939,16 +1067,22 @@ class GrayTheme(GameslistGUI):
 def parseArgs():
     desc = 'Tool to edit gamelist.xml files'
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('-th',
+    parser.add_argument('--colorsceme', '-c',
                     help='green or gray')
+    parser.add_argument('--test', '-t', action='store_true',
+                    help='run the debug crap')
 
     args = parser.parse_args()
     return args
 
 if __name__ == '__main__':
 
-    theme = parseArgs().th
-    if theme == 'green':
+    args = parseArgs()
+    theme = args.colorsceme
+
+    if args.test:
+        test()
+    elif theme == 'green':
         GreenTheme().start()
     elif theme == 'gray':
         GrayTheme().start()
