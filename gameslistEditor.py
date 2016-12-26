@@ -278,10 +278,9 @@ class Scraper(object):
         thumbnail
         genre
         '''
-
         return dict(
             name = self.__xmlValue__(dom, 'GameTitle'),
-            date = self.__xmlValue__(dom, 'ReleaseDate'),
+            releasedate = self.__xmlValue__(dom, 'ReleaseDate'),
             rating = self.__xmlValue__(dom, 'Rating'),
             developer = self.__xmlValue__(dom, 'Developer'),
             publisher = self.__xmlValue__(dom, 'Publisher'),
@@ -612,28 +611,20 @@ class GameslistGUI(object):
 
         # color palette
         palette = [
-
                 # for button selections
                 self.paletteItm('activeButton', 'standout', mode='bold'),
-
                 # for body text
                 self.paletteItm('bodyText', 'yellow', 'dark blue', mode='bold'),
-
                 # color for text being actively edited
                 self.paletteItm('edittext', fg='white', bg='black'),
-
                 # background color
                 self.paletteItm('primaryBackground', bg='dark blue'),
-
                 # for footer text
                 self.paletteItm('footerText', fg='dark blue', bg='light gray'),
-
                 # for drop shadow
                 self.paletteItm('dropShadow', bg='black'),
-
                 # for farmost background
                 self.paletteItm('deepBackground', fg='black', bg='light gray'),
-
                 ]
 
         return palette
@@ -785,10 +776,7 @@ class GameslistGUI(object):
         closeButtom = self.minimalButton('Quit')
         urwid.connect_signal(closeButtom.original_widget, 'click', self.exit_program)
 
-        body = [
-            applyButton,
-            closeButtom,
-            ]
+        body = [applyButton, closeButtom]
 
         gridFlow = urwid.GridFlow(body, 20, 0, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
@@ -930,13 +918,18 @@ class GameslistGUI(object):
         if key in ('q', 'Q', 'esc'):
             raise urwid.ExitMainLoop()
 
-        if key == 's':
+        if key in ('s', 'S'):
+            self.scraperMode = 'full'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key == 'd':
             self.scraperMode = 'date only'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
-        if key == 'S':
-            self.scraperMode = 'full'
+        if key in ('m', 'M'):
+            self.scraperMode = 'missing'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
@@ -945,111 +938,80 @@ class GameslistGUI(object):
 
     def scraperChoicesCallback(self, button, choice, data=None):
 
-        bodyText = self.gameSearchResults
-        data = bodyText.get(choice)
+        gameSearchResults = self.gameSearchResults
+        gameData = gameSearchResults.get(choice)
 
-        date = data.get('releasedate', u'')
-        gameId = data.get('gameId')
+        gameId = gameData.get('gameId')
+        date = gameData.get('releasedate', u'')
+
+        strings = list()
+        self.closePopupWindow()
+        scr = Scraper(self.currentSystem, self.currentGame)
+
+        properties = ['name', 'rating', 'releasedate', 'developer',
+                      'publisher', 'genre', 'players', 'desc']
+        results = OrderedDict()
 
         if self.scraperMode == 'date only':
-
             oldDate = self.releasedate.get_edit_text()
-            string = str(oldDate) + ' --> ' + str(date)
-
-            self.closePopupWindow()
-
-            response = urwid.Text(string)
-            button_ok = urwid.Button('Ok', self.scraperOkButtonAction, date)
-            button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
-            button_cancel = urwid.Button('Cancel', self.closePopupWindow)
-            button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
-            pile = urwid.Pile([response, button_ok, button_cancel])
-            filler = urwid.Filler(pile)
-            widget = urwid.LineBox(filler, '')
-            widget = urwid.AttrMap(widget, 'primaryBackground')
-
-            self.togglePopupWindow(widget)
+            strings = [str(oldDate) + ' --> ' + str(date)]
+            results['releasedate'] = date
 
         if self.scraperMode == 'full':
 
-            self.closePopupWindow()
+            data = scr.dataSearch(gameId)
+            for prop in properties:
+                value = str(getattr(self, prop).get_edit_text())
+                strings.append('old{}: {}'.format(prop, value))
 
-            scr = Scraper(self.currentSystem, self.currentGame)
+            strings.append('\n-->\n')
+
+            for prop in properties:
+                value = data.get(prop, '') 
+                strings.append('new{}: {}'.format(prop, value))
+                results[prop] = value
+
+        if self.scraperMode == 'missing':
+
             data = scr.dataSearch(gameId)
 
-            oldName      = self.name.get_edit_text()
-            oldImage     = self.image.get_edit_text()
-            oldRating    = self.rating.get_edit_text()
-            oldDate      = self.releasedate.get_edit_text()
-            oldDeveloper = self.developer.get_edit_text()
-            oldPublisher = self.publisher.get_edit_text()
-            oldGenre     = self.genre.get_edit_text()
-            oldPlayers   = self.players.get_edit_text()
-            oldDesc      = self.desc.get_edit_text()
+            newProps = list()
+            for prop in properties:
+                value = getattr(self, prop).get_edit_text()
+                if not value:
+                    newProps.append(prop)
+                    strings.append('old{}: {}'.format(prop, value))
 
-            pile = urwid.Pile([
-                urwid.Text('oldName:' + oldName),
-                urwid.Text('oldRating:' + oldRating),
-                urwid.Text('oldDate:' + oldDate),
-                urwid.Text('oldDeveloper:' + oldDeveloper),
-                urwid.Text('oldPublisher:' + oldPublisher),
-                urwid.Text('oldGenre:' + oldGenre),
-                urwid.Text('oldPlayers:' + oldPlayers),
-                urwid.Text('oldDesc:' + oldDesc),
+            strings.append('\n-->\n')
 
-                urwid.Text('\n-->\n'),
+            for prop in newProps:
+                value = data.get(prop, '') 
+                strings.append('new{}: {}'.format(prop, value))
+                results[prop] = value
 
-                urwid.Text('newName: {}'.format( data.get('name', '') )),
-                urwid.Text('newRating: {}'.format( data.get('rating', '') )),
-                urwid.Text('newDate: {}'.format( data.get('date', '') )),
-                urwid.Text('newDeveloper: {}'.format( data.get('developer', '') )),
-                urwid.Text('newPublisher: {}'.format( data.get('publisher', '') )),
-                urwid.Text('newGenre: {}'.format( data.get('genre', '') )),
-                urwid.Text('newPlayers: {}'.format( data.get('players', '') )),
-                urwid.Text('newDesc: {}'.format( data.get('desc', '') )),
+        widgetTexts = [urwid.Text(t) for t in strings + ['\n']]
+        pile = urwid.Pile(widgetTexts)
+        button_ok = urwid.Button('Ok', self.mixScraperOkButtonAction, results)
+        button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
+        button_cancel = urwid.Button('Cancel', self.closePopupWindow)
+        button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+        lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
+        fillerl = urwid.ListBox(lw)
+        widget = urwid.LineBox(fillerl, '')
+        widget = urwid.AttrMap(widget, 'primaryBackground')
+        self.togglePopupWindow(widget, size=70)
 
-                urwid.Text('\n'),
+    def mixScraperOkButtonAction(self, button, data):
 
-                ])
+        footerText = 'updated: '
 
-            button_ok = urwid.Button('Ok', self.fullScraperOkButtonAction, data)
-            button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
-            button_cancel = urwid.Button('Cancel', self.closePopupWindow)
-            button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+        for prop, value in data.items():
+            if value:
+                widget = getattr(self, prop)
+                widget.set_edit_text(value)
+                footerText += prop + ' '
 
-            # fillerl = urwid.Filler(pile)
-            lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
-            fillerl = urwid.ListBox(lw)
-
-            widget = urwid.LineBox(fillerl, '')
-            widget = urwid.AttrMap(widget, 'primaryBackground')
-
-            # cwidget = urwid.Columns([self.systemMenu, self.gamesMenu])
-
-            self.togglePopupWindow(widget, size=70)
-
-    def fullScraperOkButtonAction(self, button, data):
-
-        name = data.get('name', '')
-        rating = data.get('rating', '')
-        date = data.get('date', '')
-        developer = data.get('developer', '')
-        publisher = data.get('publisher', '')
-        # genre = data.get('genre', '')
-        players = data.get('players', '')
-        desc = data.get('desc', '')
-
-        # self.name.set_edit_text('')
-        self.rating.set_edit_text(rating) if rating else None
-        self.releasedate.set_edit_text(date) if date else None
-        self.developer.set_edit_text(developer) if developer else None
-        self.publisher.set_edit_text(publisher) if publisher else None
-        self.players.set_edit_text(players) if players else None
-        self.desc.set_edit_text(desc) if desc else None
-        self.closePopupWindow()
-
-    def scraperOkButtonAction(self, button, date):
-        self.releasedate.set_edit_text(date)
+        self.updateFooterText(footerText)
         self.closePopupWindow()
 
     def saveGameXmlCallback(self, button):
@@ -1143,70 +1105,96 @@ class GameslistGUI(object):
 
 class GreenTheme(GameslistGUI):
     def palette(self):
-
         # color palette
         palette = [
-
                 # for button selections
                 self.paletteItm('activeButton', 'light green', bg='black', mode='standout'),
-
                 # for body text
                 self.paletteItm('bodyText', 'dark green', 'black', mode='bold'),
-
                 # color for text being actively edited
                 self.paletteItm('edittext', fg='light green', bg='black', mode='bold'),
-
                 # background color
                 self.paletteItm('primaryBackground', fg='dark green', bg='black'),
-
                 # for footer text
                 self.paletteItm('footerText', 'dark green', bg='black', mode='standout'),
-
                 # for drop shadow
                 self.paletteItm('dropShadow', bg='black'),
-
                 # for farmost background
                 self.paletteItm('deepBackground', fg='dark green', bg='black'),
-
                 ]
-
         return palette
 
 class GrayTheme(GameslistGUI):
     def palette(self):
         # color palette
         palette = [
-
                 # for button selections
                 self.paletteItm('activeButton', 'dark cyan', bg='black', mode='standout'),
-
                 # for body text
                 self.paletteItm('bodyText', 'black', bg='light gray', mode='bold'),
-
                 # color for text being actively edited
                 self.paletteItm('edittext', fg='black', bg='light gray', mode='bold'),
-
                 # background color
                 self.paletteItm('primaryBackground', fg='black', bg='light gray'),
-
                 # for footer text
                 self.paletteItm('footerText', mode='standout'),
-
                 # for drop shadow
                 self.paletteItm('dropShadow', bg='black'),
-
                 # for farmost background
                 self.paletteItm('deepBackground', fg='black', bg='light blue'),
+                ]
+        return palette
 
+class DarkTheme(GameslistGUI):
+    def palette(self):
+        # color palette
+        palette = [
+                # for button selections
+                self.paletteItm('activeButton', 'light blue', bg='black', mode='standout'),
+                # for body text
+                self.paletteItm('bodyText', 'light green', bg='black', mode='bold'),
+                # color for text being actively edited
+                self.paletteItm('edittext', fg='white', bg='black', mode='bold'),
+                # background color
+                self.paletteItm('primaryBackground', fg='light cyan', bg='black'),
+                # for footer text
+                self.paletteItm('footerText', fg='light blue', bg='black', mode='standout'),
+                # for drop shadow
+                self.paletteItm('dropShadow', bg='black'),
+                # for farmost background
+                self.paletteItm('deepBackground', fg='black', bg='dark gray', mode='bold'),
                 ]
 
         return palette
+
+class BWTheme(GameslistGUI):
+    def palette(self):
+        # color palette
+        palette = [
+                # for button selections
+                self.paletteItm('activeButton', 'white', bg='black', mode='standout'),
+                # for body text
+                self.paletteItm('bodyText', 'white', bg='black', mode='bold'),
+                # color for text being actively edited
+                self.paletteItm('edittext', fg='white', bg='black', mode='bold'),
+                # background color
+                self.paletteItm('primaryBackground', fg='white', bg='black'),
+                # for footer text
+                self.paletteItm('footerText', fg='white', bg='black', mode='standout'),
+                # for drop shadow
+                self.paletteItm('dropShadow', bg='black'),
+                # for farmost background
+                self.paletteItm('deepBackground', fg='white', bg='black'),
+                ]
+        return palette
+
+# - Launcher ---------------------------------------------------------------
 
 def parseArgs():
     desc = 'Tool to edit gamelist.xml files'
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--colorsceme', '-c',
-                    help='green or gray')
+                    help='green, gray, or dark')
     parser.add_argument('--test', '-t', action='store_true',
                     help='run the debug crap')
 
@@ -1224,6 +1212,10 @@ if __name__ == '__main__':
         GreenTheme().start()
     elif theme == 'gray':
         GrayTheme().start()
+    elif theme == 'dark':
+        DarkTheme().start()
+    elif theme == 'bw':
+        BWTheme().start()
     else:
         GameslistGUI().start()
 
