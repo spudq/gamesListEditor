@@ -310,10 +310,34 @@ class Scraper(object):
 
         return search
 
-    def gameSearch(self):
+    def gameSearch(self, exactname=None):
 
         search = self.simplifySearchString(self.searchQuery)
         url = 'http://thegamesdb.net/api/GetGame.php'
+
+        if exactname:
+            querry = {'exactname': exactname,
+                      'platform' : self.systemName}
+        else:
+            querry = {'name': search,
+                      'platform' : self.systemName}
+
+        fileObject = self.__makeRequest__(url, querry)
+
+        self.dom = parse(fileObject)
+
+        if len(self.dom.getElementsByTagName('GameTitle')):
+            self.domValid = True
+            return
+
+        # If searching for the game with GetGame Failed
+        # try using GetGamesList. It seems that given the same
+        # query you can sometimes (rarely) get better results using
+        # GetGamesList rather than GetGame.
+        # Unfortunately GetGamesList doesn't return
+        # all of the data needed so the game will need
+        # to be searched all over again once the game name is found
+        url = 'http://thegamesdb.net/api/GetGamesList.php'
         querry = {
             'name': search,
             'platform' : self.systemName,
@@ -321,6 +345,7 @@ class Scraper(object):
         fileObject = self.__makeRequest__(url, querry)
 
         self.dom = parse(fileObject)
+        self.domValid = False
 
     def getGames(self):
 
@@ -341,12 +366,15 @@ class Scraper(object):
 
         return sortedResults
 
-    def getGameInfo(self, gameName):
+    def getGameInfo(self, exactName):
+
+        if not self.domValid:
+            self.gameSearch(exactName)
 
         # get the xml game node
         gameNode = None
         for node in self.dom.getElementsByTagName('GameTitle'):
-            if node.firstChild.data == gameName:
+            if node.firstChild.data == exactName:
                 gameNode = node.parentNode
                 break
 
@@ -514,9 +542,10 @@ class ManageGameListXML(object):
 def test():
 
     m = ManageGameListXML('nes')
-    i = m.getGames()
-    game = i.next()
-    # game = i.next()
+    j = m.getGames()
+    for i, game in enumerate(j):
+        if i == 17:
+            break
 
     print 'searching'
     s = Scraper('nes', game)
@@ -524,8 +553,9 @@ def test():
 
     games = s.getGames()
     print games
-    game = games[0]
 
+    game = games[1]
+    print game
     pprint (s.getGameInfo(game))
 
 # - URWID Below ------------------------------------------------
@@ -986,7 +1016,6 @@ class GameslistGUI(object):
         data['name'] += cc
 
         strings = list()
-        # scr = Scraper(self.currentSystem, choice)
 
         properties = ['name', 'rating', 'releasedate', 'developer',
                       'publisher', 'genre', 'players', 'desc']
