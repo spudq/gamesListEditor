@@ -1,5 +1,17 @@
 #! python
 
+'''
+TODO:
+    scraper doesn't scrape images
+    would be nice to see which things have changed
+    renaming rom name changes position in listbox
+    save needs ok dialog
+    hotkeys need to be cleaned up (move to F-keys)
+    update help page
+    save all xmls option
+    need better job keeping track of changes
+'''
+
 import os
 import re
 import shutil
@@ -24,6 +36,8 @@ from functools import partial
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
+IMAGE_DIR = os.path.join(ROMS_DIR, '{system}' + os.sep + 'downloaded_images')
+IMAGE_DIR_REL = os.path.join('.', 'downloaded_images')
 
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
@@ -200,6 +214,11 @@ def backupFile(path):
     tp = os.path.join(backupdir, fn + '.backup.' + str(version))
     shutil.copyfile(sp, tp)
 
+def pathSplit(path):
+    fp, fn = os.path.split(path)
+    bn, ext = os.path.splitext(fn)
+    return fp, bn, ext
+
 # - Utils ------------------------------------------------------
 
 def readableDateToEsString(dateStr):
@@ -261,6 +280,8 @@ class Scraper(object):
         self.searchQuery = searchQuery
         self.timeout = timeout
         self.systemName = GAMESDB_SYSTEMS.get(system)
+        self.dom = None
+        self.domValid = False
         self.gameSearch()
 
     def __makeRequest__(self, url, request={}):
@@ -338,16 +359,16 @@ class Scraper(object):
         # all of the data needed so the game will need
         # to be searched all over again once the game name is found
         url = 'http://thegamesdb.net/api/GetGamesList.php'
-        querry = {
-            'name': search,
-            'platform' : self.systemName,
-            }
+        querry = {'name': search, 'platform' : self.systemName}
         fileObject = self.__makeRequest__(url, querry)
 
         self.dom = parse(fileObject)
         self.domValid = False
 
     def getGames(self):
+
+        if not self.dom:
+            return []
 
         gameTitles = list()
         for node in self.dom.getElementsByTagName('GameTitle'):
@@ -398,6 +419,32 @@ class Scraper(object):
             players = self.__xmlValue__(gameNode, 'Players'),
             desc = self.__xmlValue__(gameNode, 'Overview'),
             )
+
+    def getBoxArtUrl(self, exactName):
+
+        if not self.domValid:
+            self.gameSearch(exactName)
+
+        boxArtNode = None
+        baseImgUrl = self.__xmlValue__(self.dom, 'baseImgUrl')
+        for node in self.dom.getElementsByTagName('boxart'):
+            if node.hasAttribute('side'):
+                if node.getAttribute('side') == 'front':
+                    boxArtNode = node
+                    break
+
+        if boxArtNode and baseImgUrl:
+            url = baseImgUrl + boxArtNode.firstChild.data
+            return url
+
+    def downloadArt(self, url, outputPath):
+
+        ext = os.path.splitext(url)[1]
+        f = self.__makeRequest__(url)
+        fd = f.read()
+        with open(outputPath + ext, 'w') as f:
+            f.write(fd)
+            return outputPath + ext
 
 # - XML Manager ------------------------------------------------
 
@@ -512,8 +559,8 @@ class ManageGameListXML(object):
     def toxml(self):
 
         newXML = self.dom.toxml()
-        reparsed = parseString(newXML)
-        return '\n'.join([line for line in reparsed.toprettyxml(indent='    '*2).split('\n') if line.strip()])
+        reparsed = parseString(u'{0}'.format(newXML).encode('utf-8'))
+        return u'\n'.join([line for line in reparsed.toprettyxml(indent=u'    '*2).split(u'\n') if line.strip()])
 
     def writeXML(self):
 
@@ -521,9 +568,9 @@ class ManageGameListXML(object):
         xmlOutPath = self.xmlpath
 
         with open(xmlOutPath, 'w') as f:
+            doc = self.toxml()
             f = codecs.lookup('utf-8')[3](f)
-            self.dom.writexml(f, indent=' ', addindent=' ',
-                              newl='\n', encoding='utf-8')
+            f.write(doc)
 
     def addGame(self, fileName):
 
@@ -542,6 +589,8 @@ class ManageGameListXML(object):
 def test():
 
     m = ManageGameListXML('nes')
+    # print m.toxml()
+
     j = m.getGames()
     for i, game in enumerate(j):
         if i == 17:
@@ -554,9 +603,11 @@ def test():
     games = s.getGames()
     print games
 
-    game = games[1]
+    game = games[0]
     print game
-    pprint (s.getGameInfo(game))
+    print s.getBoxArtUrl(game)
+    # pprint (s.getGameInfo(game))
+    #print 'Wrote:', s.getBoxArt(game, ROMS_DIR + os.sep + 'testBoxArt')
 
 # - URWID Below ------------------------------------------------
 
@@ -914,6 +965,36 @@ class GameslistGUI(object):
         else:
             self.closePopupWindow()
 
+    def helpWindow(self):
+
+        title = 'Help / Information'
+
+        padding = 2
+
+        body = [
+            urwid.Text(''),
+            urwid.Text('<F1> open this panel'),
+            urwid.Text('<t> not yet implemented panel'),
+            urwid.Text('<s> scrape date for current game'),
+            urwid.Text('<i> import missing games'),
+            urwid.Text('<q>, <esc> close this program'),
+            ]
+
+        lw = urwid.SimpleFocusListWalker(body)
+        box = urwid.ListBox(lw)
+        widget = urwid.Padding(box, left=padding, right=padding)
+        widget = urwid.LineBox(widget, title)
+        widget = urwid.AttrMap(widget, 'primaryBackground')
+        return widget
+
+    def viewXml(self):
+
+        gm = self.getOrMakeManager(self.currentSystem)
+        path = gm.xmlpath
+        with open(path, 'r') as f:
+            doc = f.read()
+        return self.emptyBoxWidget(path, doc)
+
     def scraperChoices(self):
 
         ''' search for game matches
@@ -939,69 +1020,6 @@ class GameslistGUI(object):
             title = 'Nothing Selected to Scrape'
             return self.emptyBoxWidget(title, '')
 
-    def helpWindow(self):
-
-        title = 'Help / Information'
-
-        padding = 2
-
-        body = [
-            urwid.Text(''),
-            urwid.Text('<F1> open this panel'),
-            urwid.Text('<t> not yet implemented panel'),
-            urwid.Text('<s> scrape date for current game'),
-            urwid.Text('<i> import missing games'),
-            urwid.Text('<q>, <esc> close this program'),
-            ]
-
-        lw = urwid.SimpleFocusListWalker(body)
-        box = urwid.ListBox(lw)
-        widget = urwid.Padding(box, left=padding, right=padding)
-        widget = urwid.LineBox(widget, title)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
-        return widget
-
-    # - callbacks --------------------------------------------------------------
-
-    def keypress(self, key):
-
-        # show key names
-        # self.updateFooterText(str(key))
-        # return
-
-        if key == 'esc':
-            if self.panelOpen:
-                self.closePopupWindow()
-
-        if key == 'f1':
-            popup = self.helpWindow()
-            self.togglePopupWindow(popup)
-
-        if key == 'f2':
-            popup = self.addSystemWidget()
-            self.togglePopupWindow(popup)
-
-        if key in ('q', 'Q'):
-            self.quit()
-
-        if key in ('s', 'S'):
-            self.scraperMode = 'full'
-            popup = self.scraperChoices()
-            self.togglePopupWindow(popup)
-
-        if key == 'd':
-            self.scraperMode = 'date only'
-            popup = self.scraperChoices()
-            self.togglePopupWindow(popup)
-
-        if key in ('m', 'M'):
-            self.scraperMode = 'missing'
-            popup = self.scraperChoices()
-            self.togglePopupWindow(popup)
-
-        if key in ('i', 'I'):
-            self.addMissingGames()
-
     def scraperChoiceCallback(self, button, choice):
 
         self.closePopupWindow()
@@ -1014,10 +1032,11 @@ class GameslistGUI(object):
 
         data = self.scrapeInstance.getGameInfo(choice)
         data['name'] += cc
+        data['image'] = self.scrapeInstance.getBoxArtUrl(choice)
 
         strings = list()
 
-        properties = ['name', 'rating', 'releasedate', 'developer',
+        properties = ['name', 'image', 'rating', 'releasedate', 'developer',
                       'publisher', 'genre', 'players', 'desc']
 
         results = OrderedDict()
@@ -1060,7 +1079,7 @@ class GameslistGUI(object):
 
         widgetTexts = [urwid.Text(t) for t in strings + ['\n']]
         pile = urwid.Pile(widgetTexts)
-        button_ok = urwid.Button('Ok', self.mixScraperOkButtonAction, results)
+        button_ok = urwid.Button('Ok', self.scrapeOkButtonAction, results)
         button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
         button_cancel = urwid.Button('Cancel', self.closePopupWindow)
         button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
@@ -1070,9 +1089,72 @@ class GameslistGUI(object):
         widget = urwid.AttrMap(widget, 'primaryBackground')
         self.togglePopupWindow(widget, size=70)
 
-    def mixScraperOkButtonAction(self, button, data):
+    # - callbacks --------------------------------------------------------------
+
+    def keypress(self, key):
+
+        # show key names
+        # self.updateFooterText(str(key))
+        # return
+
+        if key == 'v':
+            popup = self.viewXml()
+            self.togglePopupWindow(popup, 100)
+
+        if key == 'esc':
+            if self.panelOpen:
+                self.closePopupWindow()
+
+        if key == 'f1':
+            popup = self.helpWindow()
+            self.togglePopupWindow(popup)
+
+        if key == 'f2':
+            popup = self.addSystemWidget()
+            self.togglePopupWindow(popup)
+
+        if key in ('q', 'Q'):
+            self.quit()
+
+        if key in ('s', 'S'):
+            self.scraperMode = 'full'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key == 'd':
+            self.scraperMode = 'date only'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key in ('m', 'M'):
+            self.scraperMode = 'missing'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key in ('i', 'I'):
+            self.addMissingGames()
+
+    def scrapeOkButtonAction(self, button, data):
 
         footerText = u'updated: '
+
+        if data.get('image'):
+
+            imgPath = IMAGE_DIR.format(system=self.currentSystem)
+            imgPathRel = IMAGE_DIR_REL.format(system=self.currentSystem)
+
+            if not os.path.exists(imgPath):
+                os.makedirs(imgPath)
+
+            romPath = self.path.get_edit_text()
+            p, name, e = pathSplit(romPath)
+            fn = os.path.join(imgPath, name)
+            url = data.get('image')
+            newImg = self.scrapeInstance.downloadArt(url, fn)
+
+            tp = os.path.join(imgPathRel, os.path.split(newImg)[1])
+            self.updateFooterText(tp)
+            data['image'] = tp
 
         for prop, value in data.items():
             if value:
