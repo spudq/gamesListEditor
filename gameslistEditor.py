@@ -261,6 +261,7 @@ class Scraper(object):
         self.searchQuery = searchQuery
         self.timeout = timeout
         self.systemName = GAMESDB_SYSTEMS.get(system)
+        self.gameSearch()
 
     def __makeRequest__(self, url, request={}):
 
@@ -302,84 +303,72 @@ class Scraper(object):
                     break
         return (2.0 * hit_count) / union
 
-    def simplifySearchSting(self, search):
+    def simplifySearchString(self, search):
 
         match = re.match('(.*)\(.*\).*', search)
         search = match.group(1) if match else search
 
         return search
 
-    def gameSearch(self, sort=True):
+    def gameSearch(self):
 
-        systemName = self.systemName
-        searchQuery = self.searchQuery
-        searchQuery = self.simplifySearchSting(searchQuery)
-
-        results = dict()
-
-        url = 'http://thegamesdb.net/api/GetGamesList.php'
-        querry = {
-            'name': searchQuery,
-            #'exactname' : searchQuery,
-            'platform' : systemName,
-            }
-        fileObject = self.__makeRequest__(url, querry)
-
-        # get xml results
-        dom = parse(fileObject)
-        for node in dom.getElementsByTagName('Game'):
-            gameTitle = self.__xmlValue__(node, 'GameTitle')
-            gameId = self.__xmlValue__(node, 'id')
-            releasedate = self.__xmlValue__(node, 'ReleaseDate')
-            results[gameTitle] = {u'gameId':gameId,
-                                  u'releasedate':releasedate}
-
-        if not sort:
-            return results
-
-        # get sorting order lookup
-        skeys = list()
-        for key, data in results.items():
-            ss = self.getSimilarity(self.searchQuery, key)
-            # str(ss).ljust(15, '0'), key
-            skeys.append([ss, key])
-
-        sortedResults = list()
-        for i, title in reversed(sorted(skeys, key=itemgetter(0))):
-            sortedResults.append((title, results.get(title)))
-
-        return OrderedDict(sortedResults)
-
-    def dataSearch(self, gameID):
-
+        search = self.simplifySearchString(self.searchQuery)
         url = 'http://thegamesdb.net/api/GetGame.php'
         querry = {
-            'id': gameID,
+            'name': search,
             'platform' : self.systemName,
             }
         fileObject = self.__makeRequest__(url, querry)
 
-        dom = parse(fileObject)
+        self.dom = parse(fileObject)
 
+    def getGames(self):
+
+        gameTitles = list()
+        for node in self.dom.getElementsByTagName('GameTitle'):
+            gameTitles.append(node.firstChild.data)
+
+        # get sorting order lookup
+        skeys = list()
+        for title in gameTitles:
+            ss = self.getSimilarity(self.searchQuery, title)
+            skeys.append([ss, title])
+
+        # sort
+        sortedResults = list()
+        for i, title in reversed(sorted(skeys, key=itemgetter(0))):
+            sortedResults.append(title)
+
+        return sortedResults
+
+    def getGameInfo(self, gameName):
+
+        # get the xml game node
+        gameNode = None
+        for node in self.dom.getElementsByTagName('GameTitle'):
+            if node.firstChild.data == gameName:
+                gameNode = node.parentNode
+                break
+
+        # boo
+        if not gameNode:
+            return {}
+
+        # get genres (could be multiples)
         genres = list()
-        elements = dom.getElementsByTagName('genre')
+        elements = gameNode.getElementsByTagName('genre')
         for element in elements:
             genres.append(element.firstChild.data)
 
-        '''
-        image
-        thumbnail
-        genre
-        '''
         return dict(
-            name = self.__xmlValue__(dom, 'GameTitle'),
-            releasedate = self.__xmlValue__(dom, 'ReleaseDate'),
+            name = self.__xmlValue__(gameNode, 'GameTitle'),
+            releasedate = self.__xmlValue__(gameNode, 'ReleaseDate'),
             genre = u', '.join(genres),
-            rating = self.__xmlValue__(dom, 'Rating'),
-            developer = self.__xmlValue__(dom, 'Developer'),
-            publisher = self.__xmlValue__(dom, 'Publisher'),
-            players = self.__xmlValue__(dom, 'Players'),
-            desc = self.__xmlValue__(dom, 'Overview'),
+            rating = self.__xmlValue__(gameNode, 'Rating'),
+            developer = self.__xmlValue__(gameNode, 'Developer'),
+            publisher = self.__xmlValue__(gameNode, 'Publisher'),
+            players = self.__xmlValue__(gameNode, 'Players'),
+            desc = self.__xmlValue__(gameNode, 'Overview'),
             )
 
 # - XML Manager ------------------------------------------------
@@ -527,12 +516,17 @@ def test():
     m = ManageGameListXML('nes')
     i = m.getGames()
     game = i.next()
+    # game = i.next()
 
+    print 'searching'
     s = Scraper('nes', game)
-    d = s.gameSearch().items()[0][1]
-    gameId = d.get('gameId')
-    data = s.dataSearch(gameId)
-    pprint(data)
+    print 'done'
+
+    games = s.getGames()
+    print games
+    game = games[0]
+
+    pprint (s.getGameInfo(game))
 
 # - URWID Below ------------------------------------------------
 
@@ -900,19 +894,19 @@ class GameslistGUI(object):
             title = self.currentGame
             title = title.split('(')[0] if '(' in title else title
 
-            scr = Scraper(self.currentSystem, title)
-            results = scr.gameSearch()
+            self.scrapeInstance = Scraper(self.currentSystem, title)
+            results = self.scrapeInstance.getGames()
 
             menu = self.menuWidget(
                     title,
                     choices=results,
                     callback=self.scraperChoiceCallback)
-            self.gameSearchResults = results
+
             return menu
 
         else:
 
-            title = 'Nothing Selected'
+            title = 'Nothing Selected to Scrape'
             return self.emptyBoxWidget(title, '')
 
     def helpWindow(self):
@@ -945,6 +939,10 @@ class GameslistGUI(object):
         # self.updateFooterText(str(key))
         # return
 
+        if key == 'esc':
+            if self.panelOpen:
+                self.closePopupWindow()
+
         if key == 'f1':
             popup = self.helpWindow()
             self.togglePopupWindow(popup)
@@ -953,12 +951,8 @@ class GameslistGUI(object):
             popup = self.addSystemWidget()
             self.togglePopupWindow(popup)
 
-        if key in ('t', 'T'):
-            popup = self.emptyBoxWidget()
-            self.togglePopupWindow(popup)
-
-        if key in ('q', 'Q', 'esc'):
-            raise urwid.ExitMainLoop()
+        if key in ('q', 'Q'):
+            self.quit()
 
         if key in ('s', 'S'):
             self.scraperMode = 'full'
@@ -988,14 +982,11 @@ class GameslistGUI(object):
         cc = GOODMERGE_COUNTRY_CODES.get(founds[0], u'') if founds else u''
         cc = u' ' + cc if cc else u''
 
-        gameSearchResults = self.gameSearchResults
-        gameData = gameSearchResults.get(choice)
-
-        gameId = gameData.get('gameId')
-        date = gameData.get('releasedate', u'')
+        data = self.scrapeInstance.getGameInfo(choice)
+        data['name'] += cc
 
         strings = list()
-        scr = Scraper(self.currentSystem, choice)
+        # scr = Scraper(self.currentSystem, choice)
 
         properties = ['name', 'rating', 'releasedate', 'developer',
                       'publisher', 'genre', 'players', 'desc']
@@ -1004,43 +995,38 @@ class GameslistGUI(object):
 
         if self.scraperMode == 'date only':
 
+            date = data.get('releasedate', u'')
             oldDate = self.releasedate.get_edit_text()
-            strings = [str(oldDate) + ' --> ' + str(date)]
-            results['releasedate'] = date
+            strings = [oldDate + ' --> ' + date]
+            results['releasedate'] = date or None
 
         if self.scraperMode == 'full':
 
-            data = scr.dataSearch(gameId)
-            data['name'] += cc
-
             for prop in properties:
-                value = str(getattr(self, prop).get_edit_text())
+                value = getattr(self, prop).get_edit_text()
                 strings.append(u'{}: {}'.format(prop, value))
 
-            strings.append('\nChange To -->\n')
+            strings.append(u'\nChange To -->\n')
 
             for prop in properties:
-                value = data.get(prop, '') 
+                value = data.get(prop, u'') 
                 strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
 
         if self.scraperMode == 'missing':
-
-            data = scr.dataSearch(gameId)
-            data['name'] += cc
 
             newProps = list()
             for prop in properties:
                 value = getattr(self, prop).get_edit_text()
                 if not value:
                     newProps.append(prop)
-                    strings.append('old{}: {}'.format(prop, value))
+                    strings.append(u'{}: {}'.format(prop, value))
 
-            strings.append('\n-->\n')
+            strings.append(u'\nChange To -->\n')
 
             for prop in newProps:
-                value = data.get(prop, '') 
-                strings.append('new{}: {}'.format(prop, value))
+                value = data.get(prop, u'') 
+                strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
 
         widgetTexts = [urwid.Text(t) for t in strings + ['\n']]
