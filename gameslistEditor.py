@@ -12,12 +12,14 @@ import argparse
 from collections import OrderedDict
 from operator import itemgetter
 
-from xml.dom.minidom import parse, parseString
+from xml.dom.minidom import parse, parseString, Document
 
 import urwid
 
 from pprint import pprint
 from functools import partial
+
+# - Constnats --------------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
@@ -27,7 +29,153 @@ MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
 
-# - Generic ----------------------------------------------------
+ROM_EXTENSIONS = {
+        '3do': ['.iso'],
+        'amiga': ['.adf'],
+        'amstradcpc': ['.dsk', '.cpc'],
+        'apple2': ['.dsk'],
+        'atari2600': ['.bin', '.a26', '.rom', '.zip', '.gz'],
+        'atari800': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
+        'atari5200': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
+        'atari7800': ['.a78', '.bin'],
+        'atarijaguar': ['.j64', '.jag'],
+        'atarilynx': ['.lnx'],
+        'atarist': ['.st', '.stx', '.img', '.rom', '.raw', '.ipf', '.ctr'],
+        'coco': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+        'coleco': ['.bin', '.col', '.rom', '.zip'],
+        'c64': ['.crt', '.d64', '.g64', '.t64', '.tap', '.x64'],
+        'daphne': [''],
+        'dragon32': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+        'dreamcast': ['.cdi', '.gdi'],
+        'fba': ['.zip'],
+        'neogeo': ['.zip'],
+        'gc': ['.iso'],
+        'gamegear': [''],
+        'gb': ['.gb'],
+        'gbc': ['.gbc'],
+        'gba': ['.gba'],
+        'intellivision': ['.int', '.bin'],
+        'macintosh': ['.img', '.rom', '.dsk', '.sit'],
+        'mame-mame4all': ['.zip'],
+        'mame-advmame': ['.zip'],
+        'mame-libretro': ['.zip'],
+        'mastersystem': ['.sms'],
+        'megadrive': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
+        'genesis': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
+        'msx': ['.rom', '.mx1', '.mx2', '.col', '.dsk'],
+        'n64': ['.z64', '.n64', '.v64'],
+        'nds': ['.nds', '.bin'],
+        'nes': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
+        'fds': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
+        'neogeo': [''],
+        'oric': ['.dsk', '.tap'],
+        'pc': ['.com', '.sh', '.bat', '.exe'],
+        'pcengine': ['.pce'],
+        'psp': ['.cso', '.iso', '.pbp'],
+        'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc', '.z', '.znx'],
+        'ps2': ['.iso', '.img', '.bin', '.mdf', '.z', '.z2', '.bz2', '.dump', '.cso', '.ima', '.gz'],
+        'samcoupe': ['.dsk', '.mgt', '.sbt', '.sad'],
+        'saturn': ['.bin', '.iso', '.mdf'],
+        'scummvm': ['.sh', '.svm'],
+        'sega32x': ['.32x', '.smd', '.bin', '.md'],
+        'segacd': ['.cue', '.bin', '.iso'],
+        'sg-1000': ['.sg', '.zip'],
+        'snes': ['.zip', '.smc', '.sfc', '.fig', '.swc'],
+        'ti99': ['.ctg'],
+        'trs-80': ['.dsk'],
+        'vectrex': ['.vec', '.gam', '.bin'],
+        'videopac': ['.bin'],
+        'wii': ['.iso'],
+        'wonderswan': ['.ws'],
+        'wonderswancolor': ['.wsc'],
+        'zmachine': ['.dat', '.zip', '.z1', '.z2', '.z3', '.z4', '.z5', '.z6', '.z7', '.z8'],
+        'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi', '.mgt', '.img', '.trd', '.scl', '.dsk']
+        }
+
+GAMESDB_SYSTEMS = {
+        '3do' : '3DO',
+        'amiga' : 'Amiga',
+        'amstradcpc' : 'Amstrad CPC',
+        'arcade' : 'Arcade',
+        'atari2600' : 'Atari 2600',
+        'atari5200' : 'Atari 5200',
+        'atari7800' : 'Atari 7800',
+        'atarilynx' : 'Atari Lynx',
+        'atarijaguar' : 'Atari Jaguar',
+        'atarijaguarcd' : 'Atari Jaguar CD',
+        'atarixe' : 'Atari XE',
+        'colecovision' : 'Colecovision',
+        'c64' : 'Commodore 64',
+        'intellivision' : 'Intellivision',
+        'macintosh' : 'Mac OS',
+        'xbox' : 'Microsoft Xbox',
+        'xbox360' : 'Microsoft Xbox 360',
+        'neogeo' : 'NeoGeo',
+        'ngp' : 'Neo Geo Pocket',
+        'ngpc' : 'Neo Geo Pocket Color',
+        'n3ds' : 'Nintendo 3DS',
+        'n64' : 'Nintendo 64',
+        'nds' : 'Nintendo DS',
+        'nes' : 'Nintendo Entertainment System (NES)',
+        'mame-mame4all': 'Arcade',
+        'gb' : 'Nintendo Game Boy',
+        'gba' : 'Nintendo Game Boy Advance',
+        'gbc' : 'Nintendo Game Boy Color',
+        'gc' : 'Nintendo GameCube',
+        'wii' : 'Nintendo Wii',
+        'wiiu' : 'Nintendo Wii U',
+        'pc' : 'PC',
+        'sega32x' : 'Sega 32X',
+        'segacd' : 'Sega CD',
+        'dreamcast' : 'Sega Dreamcast',
+        'gamegear' : 'Sega Game Gear',
+        'genesis' : 'Sega Genesis',
+        'mastersystem' : 'Sega Master System',
+        'megadrive' : 'Sega Mega Drive',
+        'saturn' : 'Sega Saturn',
+        'psx' : 'Sony Playstation',
+        'ps2' : 'Sony Playstation 2',
+        'ps3' : 'Sony Playstation 3',
+        'ps4' : 'Sony Playstation 4',
+        'psvita' : 'Sony Playstation Vita',
+        'psp' : 'Sony PSP',
+        'snes' : 'Super Nintendo (SNES)',
+        'pcengine' : 'TurboGrafx 16',
+        'wonderswan' : 'WonderSwan',
+        'wonderswancolor' : 'WonderSwan Color',
+        'zxspectrum' : 'Sinclair ZX Spectrum',
+        }
+
+GOODMERGE_COUNTRY_CODES = {
+        '(A)':'(Australia)',
+        '(As)':'(Asia)',
+        '(B)':'(Brazil)',
+        '(C)':'(Canada)',
+        '(Ch)':'(China)',
+        '(D)':'(Netherlands, Dutch)',
+        '(E)':'(Europe)',
+        '(F)':'(France)',
+        '(G)':'(Germany)',
+        '(Gr)':'(Greece)',
+        '(HK)':'(Hong Kong)',
+        '(I)':'(Italy)',
+        '(J)':'(Japan)',
+        '(JU)':'(Japan, USA)',
+        '(K)':'(Korea)',
+        '(Nl)':'(Netherlands)',
+        '(No)':'(Norway)',
+        '(R)':'(Russia)',
+        '(S)':'(Spain)',
+        '(Sw)':'(Sweden)',
+        '(U)':'(USA)',
+        '(UE)':'(USA, Europe)',
+        '(UK)':'(United Kingdom)',
+        '(W)':'(World)',
+        '(Unl)':'(Unlicensed)',
+        '(PD)':'(Public domain)',
+        }
+
+# - Generic Functions ------------------------------------------
 
 def backupFile(path):
 
@@ -59,33 +207,28 @@ def readableDateToEsString(dateStr):
     dateStr = re.findall(r'[\w]+', dateStr)
 
     if not len(dateStr) == 3:
-
-        print 'bad input'
-        return '00010101T000000'
+        return None
 
     mm, dd, yyyy = dateStr
 
     if not all([i.isdigit() for i in [dd, yyyy]]):
-
-        print 'bad input', dd, yyyy
-        return '00010101T000000'
+        return None
 
     if not mm.isdigit():
         mm = mm[:3].lower()
         if mm in MONTHS:
             mm = str(MONTHS.index(mm) + 1).zfill(2)
         else:
-            print 'bad input', mm
-            return '00010101T000000'
+            return None
 
     dd = dd.zfill(2)
-
-    return yyyy+mm+dd + 'T000000'
+    rdate = yyyy+mm+dd + u'T000000'
+    return rdate
 
 def esStringToReadableDate(dateStr):
 
     if not dateStr:
-        return ''
+        return u''
 
     dateStr = dateStr.split('T').pop(0)
     yyyy = dateStr[:4]
@@ -95,7 +238,7 @@ def esStringToReadableDate(dateStr):
 
 def getGamelist(system):
 
-    return os.path.join(ROMS_DIR, system, 'gamelist.xml')
+    return os.path.join(ROMS_DIR, system, u'gamelist.xml')
 
 def getSystems():
 
@@ -117,63 +260,7 @@ class Scraper(object):
         self.system = system
         self.searchQuery = searchQuery
         self.timeout = timeout
-        self.systemName = self.__getSystemName__(system)
-
-    def __getSystemName__(self, system):
-        systems = {
-            '3do' : '3DO',
-            'amiga' : 'Amiga',
-            'amstradcpc' : 'Amstrad CPC',
-            'arcade' : 'Arcade',
-            'atari2600' : 'Atari 2600',
-            'atari5200' : 'Atari 5200',
-            'atari7800' : 'Atari 7800',
-            'atarilynx' : 'Atari Lynx',
-            'atarijaguar' : 'Atari Jaguar',
-            'atarijaguarcd' : 'Atari Jaguar CD',
-            'atarixe' : 'Atari XE',
-            'colecovision' : 'Colecovision',
-            'c64' : 'Commodore 64',
-            'intellivision' : 'Intellivision',
-            'macintosh' : 'Mac OS',
-            'xbox' : 'Microsoft Xbox',
-            'xbox360' : 'Microsoft Xbox 360',
-            'neogeo' : 'NeoGeo',
-            'ngp' : 'Neo Geo Pocket',
-            'ngpc' : 'Neo Geo Pocket Color',
-            'n3ds' : 'Nintendo 3DS',
-            'n64' : 'Nintendo 64',
-            'nds' : 'Nintendo DS',
-            'nes' : 'Nintendo Entertainment System (NES)',
-            'mame-mame4all': 'Arcade',
-            'gb' : 'Nintendo Game Boy',
-            'gba' : 'Nintendo Game Boy Advance',
-            'gbc' : 'Nintendo Game Boy Color',
-            'gc' : 'Nintendo GameCube',
-            'wii' : 'Nintendo Wii',
-            'wiiu' : 'Nintendo Wii U',
-            'pc' : 'PC',
-            'sega32x' : 'Sega 32X',
-            'segacd' : 'Sega CD',
-            'dreamcast' : 'Sega Dreamcast',
-            'gamegear' : 'Sega Game Gear',
-            'genesis' : 'Sega Genesis',
-            'mastersystem' : 'Sega Master System',
-            'megadrive' : 'Sega Mega Drive',
-            'saturn' : 'Sega Saturn',
-            'psx' : 'Sony Playstation',
-            'ps2' : 'Sony Playstation 2',
-            'ps3' : 'Sony Playstation 3',
-            'ps4' : 'Sony Playstation 4',
-            'psvita' : 'Sony Playstation Vita',
-            'psp' : 'Sony PSP',
-            'snes' : 'Super Nintendo (SNES)',
-            'pcengine' : 'TurboGrafx 16',
-            'wonderswan' : 'WonderSwan',
-            'wonderswancolor' : 'WonderSwan Color',
-            'zxspectrum' : 'Sinclair ZX Spectrum',
-        }
-        return systems.get(system)
+        self.systemName = GAMESDB_SYSTEMS.get(system)
 
     def __makeRequest__(self, url, request={}):
 
@@ -192,20 +279,20 @@ class Scraper(object):
             node = elements[0].firstChild
             return node.data if node else None
 
-    def get_bigrams(self, string):
+    def getBigrams(self, string):
         '''
         Takes a string and returns a list of bigrams
         '''
         s = string.lower()
         return [s[i:i+2] for i in xrange(len(s) - 1)]
 
-    def string_similarity(self, str1, str2):
+    def getSimilarity(self, str1, str2):
         '''
         Perform bigram comparison between two strings
         and return a percentage match in decimal form
         '''
-        pairs1 = self.get_bigrams(str1)
-        pairs2 = self.get_bigrams(str2)
+        pairs1 = self.getBigrams(str1)
+        pairs2 = self.getBigrams(str2)
         union  = len(pairs1) + len(pairs2)
         hit_count = 0
         for x in pairs1:
@@ -253,7 +340,7 @@ class Scraper(object):
         # get sorting order lookup
         skeys = list()
         for key, data in results.items():
-            ss = self.string_similarity(self.searchQuery, key)
+            ss = self.getSimilarity(self.searchQuery, key)
             # str(ss).ljust(15, '0'), key
             skeys.append([ss, key])
 
@@ -271,7 +358,13 @@ class Scraper(object):
             'platform' : self.systemName,
             }
         fileObject = self.__makeRequest__(url, querry)
+
         dom = parse(fileObject)
+
+        genres = list()
+        elements = dom.getElementsByTagName('genre')
+        for element in elements:
+            genres.append(element.firstChild.data)
 
         '''
         image
@@ -281,6 +374,7 @@ class Scraper(object):
         return dict(
             name = self.__xmlValue__(dom, 'GameTitle'),
             releasedate = self.__xmlValue__(dom, 'ReleaseDate'),
+            genre = u', '.join(genres),
             rating = self.__xmlValue__(dom, 'Rating'),
             developer = self.__xmlValue__(dom, 'Developer'),
             publisher = self.__xmlValue__(dom, 'Publisher'),
@@ -289,6 +383,21 @@ class Scraper(object):
             )
 
 # - XML Manager ------------------------------------------------
+
+def newGamesList(system):
+
+    xmlpath = getGamelist(system)
+    if os.path.exists(xmlpath):
+        return
+    dom = Document()
+    root = dom.createElement('gameList')
+    dom.appendChild(root)
+
+    with open(xmlpath, 'w') as f:
+        f = codecs.lookup('utf-8')[3](f)
+        dom.writexml(f, indent=' ', addindent=' ', newl='\n', encoding='utf-8')
+
+    return xmlpath
 
 class ManageGameListXML(object):
 
@@ -312,78 +421,9 @@ class ManageGameListXML(object):
             if self.getData(node, 'name') == game:
                 return node
 
-    def __extPerSystem__(self):
-        '''
-        This big ol' list I scraped from the wikis, maybe not everything is correct
-        adds a lot of lines to the script but for now I want just one file
-        '''
-        exts = {
-            '3do': ['.iso'],
-            'amiga': ['.adf'],
-            'amstradcpc': ['.dsk', '.cpc'],
-            'apple2': ['.dsk'],
-            'atari2600': ['.bin', '.a26', '.rom', '.zip', '.gz'],
-            'atari800': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
-            'atari5200': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
-            'atari7800': ['.a78', '.bin'],
-            'atarijaguar': ['.j64', '.jag'],
-            'atarilynx': ['.lnx'],
-            'atarist': ['.st', '.stx', '.img', '.rom', '.raw', '.ipf', '.ctr'],
-            'coco': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
-            'coleco': ['.bin', '.col', '.rom', '.zip'],
-            'c64': ['.crt', '.d64', '.g64', '.t64', '.tap', '.x64'],
-            'daphne': [''],
-            'dragon32': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
-            'dreamcast': ['.cdi', '.gdi'],
-            'fba': ['.zip'],
-            'neogeo': ['.zip'],
-            'gc': ['.iso'],
-            'gamegear': [''],
-            'gb': ['.gb'],
-            'gbc': ['.gbc'],
-            'gba': ['.gba'],
-            'intellivision': ['.int', '.bin'],
-            'macintosh': ['.img', '.rom', '.dsk', '.sit'],
-            'mame-mame4all': ['.zip'],
-            'mame-advmame': ['.zip'],
-            'mame-libretro': ['.zip'],
-            'mastersystem': ['.sms'],
-            'megadrive': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
-            'genesis': ['.smd', '.bin', '.gen', '.md', '.sg', '.zip'],
-            'msx': ['.rom', '.mx1', '.mx2', '.col', '.dsk'],
-            'n64': ['.z64', '.n64', '.v64'],
-            'nds': ['.nds', '.bin'],
-            'nes': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
-            'fds': ['.zip', '.nes', '.smc', '.sfc', '.fig', '.swc', '.mgd'],
-            'neogeo': [''],
-            'oric': ['.dsk', '.tap'],
-            'pc': ['.com', '.sh', '.bat', '.exe'],
-            'pcengine': ['.pce'],
-            'psp': ['.cso', '.iso', '.pbp'],
-            'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc', '.z', '.znx'],
-            'ps2': ['.iso', '.img', '.bin', '.mdf', '.z', '.z2', '.bz2', '.dump', '.cso', '.ima', '.gz'],
-            'samcoupe': ['.dsk', '.mgt', '.sbt', '.sad'],
-            'saturn': ['.bin', '.iso', '.mdf'],
-            'scummvm': ['.sh', '.svm'],
-            'sega32x': ['.32x', '.smd', '.bin', '.md'],
-            'segacd': ['.cue', '.bin', '.iso'],
-            'sg-1000': ['.sg', '.zip'],
-            'snes': ['.zip', '.smc', '.sfc', '.fig', '.swc'],
-            'ti99': ['.ctg'],
-            'trs-80': ['.dsk'],
-            'vectrex': ['.vec', '.gam', '.bin'],
-            'videopac': ['.bin'],
-            'wii': ['.iso'],
-            'wonderswan': ['.ws'],
-            'wonderswancolor': ['.wsc'],
-            'zmachine': ['.dat', '.zip', '.z1', '.z2', '.z3', '.z4', '.z5', '.z6', '.z7', '.z8'],
-            'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi', '.mgt', '.img', '.trd', '.scl', '.dsk']
-        }
-        return exts.get(self.system)
-
     def findMissingGames(self):
 
-        exts = self.__extPerSystem__()
+        exts = ROM_EXTENSIONS.get(self.system)
         path = os.path.join(ROMS_DIR, self.system)
         gamesOnDisc = [f for f in os.listdir(path) if any(e for e in exts if f.lower().endswith(e.lower()))]
         gamesInXML = [g.split('/').pop() for g in list(self.getGames(False)) if '/' in g]
@@ -421,7 +461,7 @@ class ManageGameListXML(object):
 
         d = parentNode.getElementsByTagName(name)
         data = d[0].firstChild.data if d and d[0].firstChild else None
-        data = data.encode('utf-8') if data else None
+        # data = data.encode('utf-8') if data else None
         return data
 
     def getGames(self, asName=True):
@@ -465,7 +505,8 @@ class ManageGameListXML(object):
 
         with open(xmlOutPath, 'w') as f:
             f = codecs.lookup('utf-8')[3](f)
-            self.dom.writexml(f, encoding='utf-8')
+            self.dom.writexml(f, indent=' ', addindent=' ',
+                              newl='\n', encoding='utf-8')
 
     def addGame(self, fileName):
 
@@ -483,16 +524,6 @@ class ManageGameListXML(object):
 
 def test():
 
-    '''
-    mgl = ManageGameListXML('mastersystem')
-    games = mgl.findMissingGames()
-    for game in games:
-        mgl.addGame(game)
-
-    print mgl.toxml()
-    '''
-
-
     m = ManageGameListXML('nes')
     i = m.getGames()
     game = i.next()
@@ -500,17 +531,8 @@ def test():
     s = Scraper('nes', game)
     d = s.gameSearch().items()[0][1]
     gameId = d.get('gameId')
-    print s.dataSearch(gameId)
-
-    '''
-    m = ManageGameListXML('mame-mame4all')
-    game = 'Choplifter'
-    data = m.getDataForGame(game)
-    pprint (data)
-    m.setDataForGame(game, data)
-    data = m.getDataForGame(game)
-    pprint (data)
-    '''
+    data = s.dataSearch(gameId)
+    pprint(data)
 
 # - URWID Below ------------------------------------------------
 
@@ -552,7 +574,7 @@ class GameslistGUI(object):
         # do it
         self.loop = urwid.MainLoop(self.body, self.palette(), unhandled_input=self.keypress)
 
-    def main_shadow(self, w):
+    def main_shadow(self, widget):
 
         bg = urwid.AttrWrap(urwid.SolidFill(u"\u2592"), 'deepBackground')
         shadow = urwid.AttrWrap(urwid.SolidFill(u" "), 'dropShadow')
@@ -560,11 +582,11 @@ class GameslistGUI(object):
         bg = urwid.Overlay( shadow, bg,
             ('fixed left', 3), ('fixed right', 1),
             ('fixed top', 2), ('fixed bottom', 1))
-        w = urwid.Overlay( w, bg,
+        widget = urwid.Overlay( widget, bg,
             ('fixed left', 2), ('fixed right', 3),
             ('fixed top', 1), ('fixed bottom', 2))
 
-        return w
+        return widget
 
     def start(self):
 
@@ -629,7 +651,7 @@ class GameslistGUI(object):
 
         return palette
 
-    def exit_program(self, button=None):
+    def quit(self, button=None):
 
         raise urwid.ExitMainLoop()
 
@@ -738,16 +760,16 @@ class GameslistGUI(object):
             body.append( button )
         return body
 
-    def field(self, var, label=None, defaultText='', multiline=False, callback=None):
+    def field(self, var, label=None, defaultText=u'', multiline=False, callback=None):
 
         label = label or var
-        label = label + ': '
-        labelWidget = urwid.Text(('primaryBackground', label))
-        editWidget = urwid.Edit('', defaultText, multiline=multiline)
-        map = urwid.AttrMap(editWidget, 'bodyText', 'edittext')
+        label = label + u': '
+        labelWidget = urwid.Text((u'primaryBackground', label))
+        editWidget = urwid.Edit(u'', defaultText, multiline=multiline)
+        map = urwid.AttrMap(editWidget, u'bodyText', u'edittext')
         setattr(self, var, editWidget)
 
-        return urwid.Columns([('pack', labelWidget), map])
+        return urwid.Columns([(u'pack', labelWidget), map])
 
     def minimalButton(self, *args, **kwargs):
 
@@ -774,7 +796,7 @@ class GameslistGUI(object):
         urwid.connect_signal(applyButton.original_widget, 'click', self.saveGameXmlCallback)
 
         closeButtom = self.minimalButton('Quit')
-        urwid.connect_signal(closeButtom.original_widget, 'click', self.exit_program)
+        urwid.connect_signal(closeButtom.original_widget, 'click', self.quit)
 
         body = [applyButton, closeButtom]
 
@@ -801,27 +823,37 @@ class GameslistGUI(object):
         blank = urwid.Divider()
 
         body = [
-            blank, self.field('path'),
-            blank, self.field('name'),
-            blank, self.field('image'),
-            #blank, self.field('thumbnail'),
-            blank, self.field('rating'),
-            blank, self.field('releasedate', 'releasedate(MM/DD/YYYY)'),
-            blank, self.field('developer'),
-            blank, self.field('publisher'),
-            blank, self.field('genre'),
-            blank, self.field('players'),
-            blank, self.field('playcount'),
-            blank, self.field('lastplayed'),
-            blank, self.field('desc', multiline=True),
+            blank, self.field(u'path'),
+            blank, self.field(u'name'),
+            blank, self.field(u'image'),
+            #blank, self.field(u'thumbnail'),
+            blank, self.field(u'rating'),
+            blank, self.field(u'releasedate', u'releasedate(MM/DD/YYYY)'),
+            blank, self.field(u'developer'),
+            blank, self.field(u'publisher'),
+            blank, self.field(u'genre'),
+            blank, self.field(u'players'),
+            blank, self.field(u'playcount'),
+            blank, self.field(u'lastplayed'),
+            blank, self.field(u'desc', multiline=True),
             ]
 
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
-        widget = urwid.LineBox(widget, 'Game Information')
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        widget = urwid.LineBox(widget, u'Game Information')
+        widget = urwid.AttrMap(widget, u'primaryBackground')
 
+        return widget
+
+    def addSystemWidget(self):
+
+        files = os.listdir(ROMS_DIR)
+        dirs = [f for f in files if os.path.isdir(os.path.join(ROMS_DIR, f))]
+        widget = self.menuWidget(
+                'Add System', choices=dirs,
+                callback=self.addSystemWidgetCallback)
+        widget = urwid.AttrMap(widget, 'primaryBackground')
         return widget
 
     # - popups -----------------------------------------------------------------
@@ -860,20 +892,26 @@ class GameslistGUI(object):
 
     def scraperChoices(self):
 
+        ''' search for game matches
+        '''
+
         if self.currentSystem and self.currentGame:
+
             title = self.currentGame
             title = title.split('(')[0] if '(' in title else title
+
             scr = Scraper(self.currentSystem, title)
             results = scr.gameSearch()
-
 
             menu = self.menuWidget(
                     title,
                     choices=results,
-                    callback=self.scraperChoicesCallback)
+                    callback=self.scraperChoiceCallback)
             self.gameSearchResults = results
             return menu
+
         else:
+
             title = 'Nothing Selected'
             return self.emptyBoxWidget(title, '')
 
@@ -911,6 +949,10 @@ class GameslistGUI(object):
             popup = self.helpWindow()
             self.togglePopupWindow(popup)
 
+        if key == 'f2':
+            popup = self.addSystemWidget()
+            self.togglePopupWindow(popup)
+
         if key in ('t', 'T'):
             popup = self.emptyBoxWidget()
             self.togglePopupWindow(popup)
@@ -936,7 +978,15 @@ class GameslistGUI(object):
         if key in ('i', 'I'):
             self.addMissingGames()
 
-    def scraperChoicesCallback(self, button, choice, data=None):
+    def scraperChoiceCallback(self, button, choice):
+
+        self.closePopupWindow()
+
+        # attempt to get country code from rom name (on disc)
+        rom = self.path.get_edit_text()
+        founds = re.findall(r'\(.*?\)', rom)
+        cc = GOODMERGE_COUNTRY_CODES.get(founds[0], u'') if founds else u''
+        cc = u' ' + cc if cc else u''
 
         gameSearchResults = self.gameSearchResults
         gameData = gameSearchResults.get(choice)
@@ -945,14 +995,15 @@ class GameslistGUI(object):
         date = gameData.get('releasedate', u'')
 
         strings = list()
-        self.closePopupWindow()
-        scr = Scraper(self.currentSystem, self.currentGame)
+        scr = Scraper(self.currentSystem, choice)
 
         properties = ['name', 'rating', 'releasedate', 'developer',
                       'publisher', 'genre', 'players', 'desc']
+
         results = OrderedDict()
 
         if self.scraperMode == 'date only':
+
             oldDate = self.releasedate.get_edit_text()
             strings = [str(oldDate) + ' --> ' + str(date)]
             results['releasedate'] = date
@@ -960,20 +1011,23 @@ class GameslistGUI(object):
         if self.scraperMode == 'full':
 
             data = scr.dataSearch(gameId)
+            data['name'] += cc
+
             for prop in properties:
                 value = str(getattr(self, prop).get_edit_text())
-                strings.append('old{}: {}'.format(prop, value))
+                strings.append(u'{}: {}'.format(prop, value))
 
-            strings.append('\n-->\n')
+            strings.append('\nChange To -->\n')
 
             for prop in properties:
                 value = data.get(prop, '') 
-                strings.append('new{}: {}'.format(prop, value))
+                strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
 
         if self.scraperMode == 'missing':
 
             data = scr.dataSearch(gameId)
+            data['name'] += cc
 
             newProps = list()
             for prop in properties:
@@ -1003,13 +1057,13 @@ class GameslistGUI(object):
 
     def mixScraperOkButtonAction(self, button, data):
 
-        footerText = 'updated: '
+        footerText = u'updated: '
 
         for prop, value in data.items():
             if value:
                 widget = getattr(self, prop)
                 widget.set_edit_text(value)
-                footerText += prop + ' '
+                footerText += prop + u' '
 
         self.updateFooterText(footerText)
         self.closePopupWindow()
@@ -1040,19 +1094,19 @@ class GameslistGUI(object):
         self.gamesMenu.original_widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
         self.updateFooterText(getGamelist(choice))
 
-        self.path.set_edit_text('')
-        self.name.set_edit_text('')
-        self.image.set_edit_text('')
+        self.path.set_edit_text(u'')
+        self.name.set_edit_text(u'')
+        self.image.set_edit_text(u'')
         # self.thumbnail.set_edit_text('')
-        self.rating.set_edit_text('')
-        self.releasedate.set_edit_text('')
-        self.developer.set_edit_text('')
-        self.publisher.set_edit_text('')
-        self.genre.set_edit_text('')
-        self.players.set_edit_text('')
-        self.playcount.set_edit_text('')
-        self.lastplayed.set_edit_text('')
-        self.desc.set_edit_text('')
+        self.rating.set_edit_text(u'')
+        self.releasedate.set_edit_text(u'')
+        self.developer.set_edit_text(u'')
+        self.publisher.set_edit_text(u'')
+        self.genre.set_edit_text(u'')
+        self.players.set_edit_text(u'')
+        self.playcount.set_edit_text(u'')
+        self.lastplayed.set_edit_text(u'')
+        self.desc.set_edit_text(u'')
 
     def gamesWidgetCallback(self, button, choice):
 
@@ -1071,19 +1125,19 @@ class GameslistGUI(object):
             self.updateFooterText('game list out of date')
             return
 
-        path        = data.get('path', '')
-        name        = data.get('name', '')
-        image       = data.get('image', '')
+        path        = data.get('path', u'')
+        name        = data.get('name', u'')
+        image       = data.get('image', u'')
         # thumbnail   = data.get('thumbnail', '')
-        rating      = data.get('rating', '')
-        releasedate = data.get('releasedate', '')
-        developer   = data.get('developer', '')
-        publisher   = data.get('publisher', '')
-        genre       = data.get('genre', '')
-        players     = data.get('players', '')
-        playcount   = data.get('playcount', '')
-        lastplayed  = data.get('lastplayed', '')
-        desc        = data.get('desc', '')
+        rating      = data.get('rating', u'')
+        releasedate = data.get('releasedate', u'')
+        developer   = data.get('developer', u'')
+        publisher   = data.get('publisher', u'')
+        genre       = data.get('genre', u'')
+        players     = data.get('players', u'')
+        playcount   = data.get('playcount', u'')
+        lastplayed  = data.get('lastplayed', u'')
+        desc        = data.get('desc', u'')
 
         releasedate = esStringToReadableDate(releasedate)
 
@@ -1100,6 +1154,22 @@ class GameslistGUI(object):
         self.playcount.set_edit_text(playcount)
         self.lastplayed.set_edit_text(lastplayed)
         self.desc.set_edit_text(desc)
+
+    def addSystemWidgetCallback(self, button, choice):
+
+        xml = newGamesList(choice)
+        if xml:
+            self.systems = list(getSystems())
+            self.systemMenu.original_widget = self.menuWidget(
+                    'Game Systems',
+                    self.systems,
+                    self.systemsWidgetCallback
+                    )
+            self.updateFooterText('created: ' + choice)
+        else:
+            self.updateFooterText('Did Nothing')
+
+        self.closePopupWindow()
 
 # - Alternate Colors -------------------------------------------------------
 
