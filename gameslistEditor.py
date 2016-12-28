@@ -2,14 +2,13 @@
 
 '''
 TODO:
-    scraper doesn't scrape images
     would be nice to see which things have changed
+    need better job keeping track of changes
     renaming rom name changes position in listbox
     save needs ok dialog
     hotkeys need to be cleaned up (move to F-keys)
     update help page
     save all xmls option
-    need better job keeping track of changes
 '''
 
 import os
@@ -33,6 +32,7 @@ from functools import partial
 
 # - Constnats --------------------------------------------------
 
+# user settings
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
@@ -43,6 +43,7 @@ MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
 
+# from Emulation Station Wiki
 ROM_EXTENSIONS = {
         '3do': ['.iso'],
         'amiga': ['.adf'],
@@ -106,6 +107,7 @@ ROM_EXTENSIONS = {
         'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi', '.mgt', '.img', '.trd', '.scl', '.dsk']
         }
 
+# from Emulation Station Source code
 GAMESDB_SYSTEMS = {
         '3do' : '3DO',
         'amiga' : 'Amiga',
@@ -160,6 +162,7 @@ GAMESDB_SYSTEMS = {
         'zxspectrum' : 'Sinclair ZX Spectrum',
         }
 
+# from wikipedia
 GOODMERGE_COUNTRY_CODES = {
         '(A)':'(Australia)',
         '(As)':'(Asia)',
@@ -271,7 +274,7 @@ def getSystems():
 
 class Scraper(object):
 
-    def __init__(self, system, searchQuery, timeout=None):
+    def __init__(self, system, searchQuery, timeout=None, exactname=None):
 
         # userAgent can be anything but python apperently
         # so I told gamesdb that this is my browser
@@ -282,7 +285,7 @@ class Scraper(object):
         self.systemName = GAMESDB_SYSTEMS.get(system)
         self.dom = None
         self.domValid = False
-        self.gameSearch()
+        self.gameSearch(exactname=exactname)
 
     def __makeRequest__(self, url, request={}):
 
@@ -425,14 +428,27 @@ class Scraper(object):
         if not self.domValid:
             self.gameSearch(exactName)
 
-        boxArtNode = None
+        # url front
         baseImgUrl = self.__xmlValue__(self.dom, 'baseImgUrl')
-        for node in self.dom.getElementsByTagName('boxart'):
+
+        # get the matching game node
+        gameNode = None
+        for node in self.dom.getElementsByTagName('GameTitle'):
+            if node.firstChild.data == exactName:
+                gameNode = node.parentNode
+                break
+        if not gameNode:
+            return
+
+        # find the box art node under the game node
+        boxArtNode = None
+        for node in gameNode.getElementsByTagName('boxart'):
             if node.hasAttribute('side'):
                 if node.getAttribute('side') == 'front':
                     boxArtNode = node
                     break
 
+        # return the match
         if boxArtNode and baseImgUrl:
             url = baseImgUrl + boxArtNode.firstChild.data
             return url
@@ -588,26 +604,29 @@ class ManageGameListXML(object):
 
 def test():
 
-    m = ManageGameListXML('nes')
-    # print m.toxml()
+    system = 'nes'
 
+    # manager
+    m = ManageGameListXML(system)
     j = m.getGames()
-    for i, game in enumerate(j):
-        if i == 17:
-            break
+    game = j.next()
 
-    print 'searching'
-    s = Scraper('nes', game)
-    print 'done'
+    print 'Game from xml:', game
 
+    print 'Searching for scraping options'
+    s = Scraper(system, game)
+    print 'Done searching...'
+
+    # get games from scraper
     games = s.getGames()
-    print games
-
     game = games[0]
-    print game
-    print s.getBoxArtUrl(game)
-    # pprint (s.getGameInfo(game))
-    #print 'Wrote:', s.getBoxArt(game, ROMS_DIR + os.sep + 'testBoxArt')
+
+    pprint(s.getGameInfo(game))
+    url = s.getBoxArtUrl(game)
+
+    outputPath = ROMS_DIR + os.sep + 'testBoxArt'
+    path = s.downloadArt(url, outputPath)
+    print 'Wrote:', path
 
 # - URWID Below ------------------------------------------------
 
