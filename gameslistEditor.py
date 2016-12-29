@@ -2,23 +2,28 @@
 
 '''
 TODO:
-    would be nice to see which things have changed
-    need better job keeping track of changes
-    renaming rom name changes position in listbox
     save needs ok dialog
+    renaming rom name changes position in listbox
     hotkeys need to be cleaned up (move to F-keys)
     update help page
+    clean up all footer messages
+    would be nice to see which things have changed
+    need better job keeping track of changes
     save all xmls option
 '''
 
+# - Imports ----------------------------------------------------
+
 import os
 import re
+import errno
 import shutil
 import urllib
 import urllib2
 import codecs
 import difflib
 import argparse
+import subprocess
 
 from collections import OrderedDict
 from operator import itemgetter
@@ -30,14 +35,23 @@ import urwid
 from pprint import pprint
 from functools import partial
 
-# - Constnats --------------------------------------------------
+# - Constants --------------------------------------------------
 
-# user settings
+# -- user settings --
+
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
-IMAGE_DIR = os.path.join(ROMS_DIR, '{system}' + os.sep + 'downloaded_images')
-IMAGE_DIR_REL = os.path.join('.', 'downloaded_images')
+
+IMAGE_DIR = os.path.join(ROMS_DIR, '{system}', 'downloaded_images')
+IMAGE_DIR_FULL = os.path.join(ROMS_DIR, '{system}', 'downloaded_images_large')
+IMAGE_DIR_XML = os.path.join('.', 'downloaded_images')
+
+SCRAPER_IMG_MAX_WIDTH = 400
+SCRAPER_IMG_SUFFIX = '-image'
+SCRAPER_USE_EXISTING_IMAGES = True
+
+# -- other settings --
 
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
@@ -162,7 +176,7 @@ GAMESDB_SYSTEMS = {
         'zxspectrum' : 'Sinclair ZX Spectrum',
         }
 
-# from wikipedia
+# from Wikipedia
 GOODMERGE_COUNTRY_CODES = {
         '(A)':'(Australia)',
         '(As)':'(Asia)',
@@ -192,15 +206,37 @@ GOODMERGE_COUNTRY_CODES = {
         '(PD)':'(Public domain)',
         }
 
+# hard coded rom name search fixes
+# In case the rom name doesn't match games db title
+SCRAPER_NAME_SWAPS = {
+        'megaman':'Mega Man',
+        }
+
 # - Generic Functions ------------------------------------------
+
+def mkdir_p(path):
+    '''make a directory
+
+    from http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+
+    good explination on why this is better than
+    if not os.path.exists(path):
+        os.makedirs(path)
+    '''
+    try:
+        os.makedirs(path)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
 
 def backupFile(path):
 
     sp = os.path.abspath(path)
     fp, fn = os.path.split(sp)
     backupdir = os.path.join(fp, '.backup')
-    if not os.path.exists(backupdir):
-        os.mkdir(backupdir)
+    mkdir_p(backupdir)
 
     matcher = fn + '.backup.\d+'
     backups = [f for f in os.listdir(backupdir) if re.match(matcher, f)]
@@ -272,11 +308,24 @@ def getSystems():
 
 # - Scraper ----------------------------------------------------
 
+def simplifySearchString(searchString):
+
+    # everything before the matching parenthesis
+    match = re.match('(.*)\(.*\).*', searchString)
+    searchString = match.group(1) if match else searchString
+
+    # swap any known name issues
+    for before, after in SCRAPER_NAME_SWAPS.items():
+        sr = re.compile(re.escape(before), re.IGNORECASE)
+        searchString = sr.sub(after, searchString)
+
+    return searchString
+
 class Scraper(object):
 
     def __init__(self, system, searchQuery, timeout=None, exactname=None):
 
-        # userAgent can be anything but python apperently
+        # userAgent can be anything but python apparently
         # so I told gamesdb that this is my browser
         self.userAgent = 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
         self.system = system
@@ -287,13 +336,19 @@ class Scraper(object):
         self.domValid = False
         self.gameSearch(exactname=exactname)
 
-    def __makeRequest__(self, url, request={}):
+    def __makeRequest__(self, url, request={}, retrys=3):
 
         querry = urllib.urlencode(request)
         headers = {'User-Agent' : self.userAgent}
         request = urllib2.Request(url, querry, headers=headers)
-        fileObject =  urllib2.urlopen(request, timeout=self.timeout)
-        return fileObject
+
+        attempts = 0
+        while attempts < retrys:
+            try:
+                fileObject = urllib2.urlopen(request, timeout=self.timeout)
+                return fileObject
+            except urllib2.URLError, e:
+                attempts += 1
 
     def __xmlValue__(self, parent, tag):
 
@@ -327,16 +382,9 @@ class Scraper(object):
                     break
         return (2.0 * hit_count) / union
 
-    def simplifySearchString(self, search):
-
-        match = re.match('(.*)\(.*\).*', search)
-        search = match.group(1) if match else search
-
-        return search
-
     def gameSearch(self, exactname=None):
 
-        search = self.simplifySearchString(self.searchQuery)
+        search = self.searchQuery
         url = 'http://thegamesdb.net/api/GetGame.php'
 
         if exactname:
@@ -453,14 +501,43 @@ class Scraper(object):
             url = baseImgUrl + boxArtNode.firstChild.data
             return url
 
-    def downloadArt(self, url, outputPath):
+    def downloadArt(self, url, outputImgName):
 
-        ext = os.path.splitext(url)[1]
+        # get output directories
+        imdDirFull = IMAGE_DIR_FULL.format(system=self.system)
+        imgDirSmall = IMAGE_DIR.format(system=self.system)
+        imgPathXML = IMAGE_DIR_XML.format(system=self.system)
+        suffix = SCRAPER_IMG_SUFFIX
+
+        # get image name
+        imgExt = os.path.splitext(url)[1]
+        imgName = os.sep + outputImgName + suffix + imgExt
+
+        # output paths
+        imgPathFull = imdDirFull + imgName
+        imgPathSmall = imgDirSmall + imgName
+        imgPathXML += imgName
+
+        # check if image alredy exists (use it)
+        if SCRAPER_USE_EXISTING_IMAGES:
+            if os.path.exists(imgPathSmall):
+                return imgPathSmall, imgPathXML
+
+        # make output directories
+        mkdir_p(imdDirFull)
+        mkdir_p(imgDirSmall)
+
+        # download image
         f = self.__makeRequest__(url)
         fd = f.read()
-        with open(outputPath + ext, 'w') as f:
+        with open(imgPathFull, 'w') as f:
             f.write(fd)
-            return outputPath + ext
+
+        # resize command
+        s = 'x{}>'.format(SCRAPER_IMG_MAX_WIDTH)
+        cmd = ['convert', '-resize', s, imgPathFull, imgPathSmall]
+        subprocess.check_call(cmd)
+        return imgPathSmall, imgPathXML
 
 # - XML Manager ------------------------------------------------
 
@@ -614,7 +691,7 @@ def test():
     print 'Game from xml:', game
 
     print 'Searching for scraping options'
-    s = Scraper(system, game)
+    s = Scraper(system, simplifySearchString(game))
     print 'Done searching...'
 
     # get games from scraper
@@ -624,9 +701,9 @@ def test():
     pprint(s.getGameInfo(game))
     url = s.getBoxArtUrl(game)
 
-    outputPath = ROMS_DIR + os.sep + 'testBoxArt'
-    path = s.downloadArt(url, outputPath)
-    print 'Wrote:', path
+    # outputPath = ROMS_DIR + os.sep + 'testBoxArt'
+    fp, xp = s.downloadArt(url, 'test')
+    print fp
 
 # - URWID Below ------------------------------------------------
 
@@ -871,16 +948,22 @@ class GameslistGUI(object):
         buttonText = button.get_label()
         return urwid.Padding(button, width=len(buttonText)+4)
 
+    def lineBoxWrap(self, widget, title, padding=2, attrMap='primaryBackground'):
+
+        widget = urwid.Padding(widget, left=padding, right=padding)
+        widget = urwid.LineBox(widget, title)
+        widget = urwid.AttrMap(widget, 'primaryBackground')
+        return widget
+
+
     # - Widgets ----------------------------------------------------------------
 
-    def menuWidget(self, title, choices=[], callback=None, padding=2):
+    def menuWidget(self, title, choices=[], callback=None):
 
         body = self.menuButtonList(choices, callback)
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
-        widget = urwid.Padding(box, left=padding, right=padding)
-        widget = urwid.LineBox(widget, title)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        widget = self.lineBoxWrap(box, title)
 
         return widget
 
@@ -904,13 +987,10 @@ class GameslistGUI(object):
 
     def emptyBoxWidget(self, title='Content Goes Here', text=''):
 
-        text = urwid.Text(text)
-        fill = urwid.Filler(text)
-
-        widget = urwid.SolidFill()
-        widget = urwid.LineBox(fill, title)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
-        return widget
+        body = [urwid.Text(text)]
+        lw = urwid.SimpleFocusListWalker(body)
+        box = urwid.ListBox(lw)
+        return self.lineBoxWrap(box, title)
 
     def mainEditWidget(self):
 
@@ -934,11 +1014,8 @@ class GameslistGUI(object):
 
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
-        widget = urwid.Padding(box, left=2, right=2)
-        widget = urwid.LineBox(widget, u'Game Information')
-        widget = urwid.AttrMap(widget, u'primaryBackground')
 
-        return widget
+        return self.lineBoxWrap(box, u'Game Information')
 
     def addSystemWidget(self):
 
@@ -947,10 +1024,10 @@ class GameslistGUI(object):
         widget = self.menuWidget(
                 'Add System', choices=dirs,
                 callback=self.addSystemWidgetCallback)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        # widget = urwid.AttrMap(widget, 'primaryBackground')
         return widget
 
-    # - popups -----------------------------------------------------------------
+    # - pop-up stuffs ----------------------------------------------------------
 
     def openPopupWindow(self, widget=None, size=50):
 
@@ -984,11 +1061,9 @@ class GameslistGUI(object):
         else:
             self.closePopupWindow()
 
+    # - pop-ups ----------------------------------------------------------------
+
     def helpWindow(self):
-
-        title = 'Help / Information'
-
-        padding = 2
 
         body = [
             urwid.Text(''),
@@ -1001,10 +1076,8 @@ class GameslistGUI(object):
 
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
-        widget = urwid.Padding(box, left=padding, right=padding)
-        widget = urwid.LineBox(widget, title)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
-        return widget
+
+        return self.lineBoxWrap(box, u'Help / Information')
 
     def viewXml(self):
 
@@ -1022,7 +1095,7 @@ class GameslistGUI(object):
         if self.currentSystem and self.currentGame:
 
             title = self.currentGame
-            title = title.split('(')[0] if '(' in title else title
+            title = simplifySearchString(title)
 
             self.scrapeInstance = Scraper(self.currentSystem, title)
             results = self.scrapeInstance.getGames()
@@ -1104,8 +1177,7 @@ class GameslistGUI(object):
         button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
         lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
         fillerl = urwid.ListBox(lw)
-        widget = urwid.LineBox(fillerl, '')
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        widget = self.lineBoxWrap(fillerl, 'Review Changes')
         self.togglePopupWindow(widget, size=70)
 
     # - callbacks --------------------------------------------------------------
@@ -1118,7 +1190,7 @@ class GameslistGUI(object):
 
         if key == 'v':
             popup = self.viewXml()
-            self.togglePopupWindow(popup, 100)
+            self.togglePopupWindow(popup, 90)
 
         if key == 'esc':
             if self.panelOpen:
@@ -1159,21 +1231,10 @@ class GameslistGUI(object):
 
         if data.get('image'):
 
-            imgPath = IMAGE_DIR.format(system=self.currentSystem)
-            imgPathRel = IMAGE_DIR_REL.format(system=self.currentSystem)
-
-            if not os.path.exists(imgPath):
-                os.makedirs(imgPath)
-
-            romPath = self.path.get_edit_text()
-            p, name, e = pathSplit(romPath)
-            fn = os.path.join(imgPath, name)
+            p, name, e = pathSplit(self.path.get_edit_text())
             url = data.get('image')
-            newImg = self.scrapeInstance.downloadArt(url, fn)
-
-            tp = os.path.join(imgPathRel, os.path.split(newImg)[1])
-            self.updateFooterText(tp)
-            data['image'] = tp
+            img, imgXML = self.scrapeInstance.downloadArt(url, name)
+            data['image'] = imgXML
 
         for prop, value in data.items():
             if value:
@@ -1404,5 +1465,4 @@ if __name__ == '__main__':
         BWTheme().start()
     else:
         GameslistGUI().start()
-
 
