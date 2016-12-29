@@ -2,10 +2,7 @@
 
 '''
 TODO:
-    save needs ok dialog
     renaming rom name changes position in listbox
-    hotkeys need to be cleaned up (move to F-keys)
-    update help page
     clean up all footer messages
     would be nice to see which things have changed
     need better job keeping track of changes
@@ -208,6 +205,7 @@ GOODMERGE_COUNTRY_CODES = {
 
 # hard coded rom name search fixes
 # In case the rom name doesn't match games db title
+# this doesn't seem very elegant might try something different
 SCRAPER_NAME_SWAPS = {
         'megaman':'Mega Man',
         }
@@ -219,7 +217,7 @@ def mkdir_p(path):
 
     from http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
 
-    good explination on why this is better than
+    has good explanation on why this is better than
     if not os.path.exists(path):
         os.makedirs(path)
     '''
@@ -404,7 +402,7 @@ class Scraper(object):
 
         # If searching for the game with GetGame Failed
         # try using GetGamesList. It seems that given the same
-        # query you can sometimes (rarely) get better results using
+        # query you can sometimes (rarely) gets better results using
         # GetGamesList rather than GetGame.
         # Unfortunately GetGamesList doesn't return
         # all of the data needed so the game will need
@@ -839,7 +837,7 @@ class GameslistGUI(object):
             self.xmlManagers[system] = manager
             return manager
 
-    def saveGameXml(self):
+    def saveGameXml(self, *args):
 
         if not self.currentSystem:
             self.updateFooterText('no system data to update')
@@ -955,7 +953,6 @@ class GameslistGUI(object):
         widget = urwid.AttrMap(widget, 'primaryBackground')
         return widget
 
-
     # - Widgets ----------------------------------------------------------------
 
     def menuWidget(self, title, choices=[], callback=None):
@@ -1029,18 +1026,18 @@ class GameslistGUI(object):
 
     # - pop-up stuffs ----------------------------------------------------------
 
-    def openPopupWindow(self, widget=None, size=50):
+    def openPopupWindow(self, widget=None, size=[50, 50], minimum=[10, 5]):
 
         widget = widget or self.emptyBoxWidget()
         overlay = urwid.Overlay(
                     top_w=widget,
                     bottom_w=self.frameWidget,
                     align='center',
-                    width=('relative', size),
+                    width=('relative', size[0]),
                     valign='middle',
-                    height=('relative', size),
-                    min_width=None,
-                    min_height=None,
+                    height=('relative', size[1]),
+                    min_width=minimum[0],
+                    min_height=minimum[1],
                     left=-1,
                     right=0,
                     top=0,
@@ -1054,10 +1051,10 @@ class GameslistGUI(object):
         self.body.original_widget = self.frameWidget
         self.panelOpen = None
 
-    def togglePopupWindow(self, widget=None, size=50):
+    def togglePopupWindow(self, widget=None, w=50, h=None):
 
         if not self.panelOpen:
-            widget = self.openPopupWindow(widget=widget, size=size)
+            widget = self.openPopupWindow(widget=widget, size=[w, h or w])
         else:
             self.closePopupWindow()
 
@@ -1065,13 +1062,51 @@ class GameslistGUI(object):
 
     def helpWindow(self):
 
+        blank = urwid.Divider()
+
+        description = (
+                'Gui for editing gamelist.xml files. This tool is mostly intended ' +
+                'for manual editing of fields and making small changes. However ' + 
+                'it can be used to scrape data and images for a single game at a time.\n' + 
+                '\nThe hotkeys listed below all work when not over an editable field. ' +
+                'Otherwise use any of the F-keys instead. ')
+
         body = [
-            urwid.Text(''),
-            urwid.Text('<F1> open this panel'),
-            urwid.Text('<t> not yet implemented panel'),
-            urwid.Text('<s> scrape date for current game'),
-            urwid.Text('<i> import missing games'),
-            urwid.Text('<q>, <esc> close this program'),
+            blank,
+            urwid.Text(description),
+            blank,
+            urwid.AttrMap(urwid.Text('<F1>, <h>'), 'bodyText'),
+            urwid.Text('Open help panel'),
+            blank,
+            urwid.AttrMap(urwid.Text('<F2>, <n>'), 'bodyText'),
+            urwid.Text(('Add new system, eg. create new gamelist.xml file under' + 
+                ' a games folder')),
+            blank,
+            urwid.AttrMap(urwid.Text('<F3>, <i>'), 'bodyText'),
+            urwid.Text('Add games from disc missing in xml for current gamelist.xml'),
+            blank,
+            urwid.AttrMap(urwid.Text('<F4>, <s>'), 'bodyText'),
+            urwid.Text(('Scrape Full: Overwrite all fields with data ' + 
+                'found on gamesdb.net. Images will be downloaded if not in' + 
+                ' expected directory')),
+            blank,
+            urwid.AttrMap(urwid.Text('<F5>'), 'bodyText'),
+            urwid.Text('Save current gamelist.xml'),
+            blank,
+            urwid.AttrMap(urwid.Text('<F7>, <v>'), 'bodyText'),
+            urwid.Text('View current gamelist.xml (not an editor just a viewer)'),
+            blank,
+            urwid.AttrMap(urwid.Text('<F10>, <q>'), 'bodyText'),
+            urwid.Text('Exit This Program'),
+            blank,
+            urwid.AttrMap(urwid.Text('<m>'), 'bodyText'),
+            urwid.Text('Scrape Missing: Scrape only empty fields.'),
+            blank,
+            urwid.AttrMap(urwid.Text('<d>'), 'bodyText'),
+            urwid.Text('Scrape Date: Scrape only game release date.'),
+            blank,
+            urwid.AttrMap(urwid.Text('<esc>'), 'bodyText'),
+            urwid.Text('Cancel Popup'),
             ]
 
         lw = urwid.SimpleFocusListWalker(body)
@@ -1081,11 +1116,17 @@ class GameslistGUI(object):
 
     def viewXml(self):
 
-        gm = self.getOrMakeManager(self.currentSystem)
-        path = gm.xmlpath
-        with open(path, 'r') as f:
-            doc = f.read()
-        return self.emptyBoxWidget(path, doc)
+        if self.currentSystem:
+            gm = self.getOrMakeManager(self.currentSystem)
+            path = gm.xmlpath
+            with open(path, 'r') as f:
+                doc = f.read()
+            return self.emptyBoxWidget(path, doc)
+        else:
+            return self.emptyBoxWidget('No System Chosen', '')
+
+    def editXml(self):
+        pass
 
     def scraperChoices(self):
 
@@ -1178,19 +1219,54 @@ class GameslistGUI(object):
         lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
         fillerl = urwid.ListBox(lw)
         widget = self.lineBoxWrap(fillerl, 'Review Changes')
-        self.togglePopupWindow(widget, size=70)
+        self.togglePopupWindow(widget, 70)
+
+    def saveWindow(self):
+
+        if not self.currentSystem:
+            return self.emptyBoxWidget('no system chosen', '')
+
+        gm = self.getOrMakeManager(self.currentSystem)
+        path = gm.xmlpath
+
+        text = 'Save Changes to...\n'
+        text += path + '?\n'
+
+        tw = urwid.Text(text)
+
+        button_ok = urwid.Button('Ok', self.saveGameXmlCallback, None)
+        button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
+        button_cancel = urwid.Button('Cancel', self.closePopupWindow)
+        button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+
+        lw = urwid.SimpleFocusListWalker([tw, button_ok, button_cancel])
+        fillerl = urwid.ListBox(lw)
+        widget = self.lineBoxWrap(fillerl, 'Save?')
+        return widget
 
     # - callbacks --------------------------------------------------------------
 
     def keypress(self, key):
 
+        '''
+        f1 help
+        f2 open/rename/menu/setup
+        f3 search/repeat/view
+        f4 edit/filter
+        f5 refresh browsers/start app/find,replace/copy/sort
+        f6 toggles cursor location/move/collapse
+        f7 mkdir/spell check/nice-
+        f8 delete/nice+
+        f9 pulldown/kill
+        f10 menu/do/quit(when max key)
+        f11 fullscreen
+        f12 save as
+
+        '''
+
         # show key names
         # self.updateFooterText(str(key))
         # return
-
-        if key == 'v':
-            popup = self.viewXml()
-            self.togglePopupWindow(popup, 90)
 
         if key == 'esc':
             if self.panelOpen:
@@ -1198,17 +1274,33 @@ class GameslistGUI(object):
 
         if key == 'f1':
             popup = self.helpWindow()
-            self.togglePopupWindow(popup)
+            self.togglePopupWindow(popup, 70)
 
         if key == 'f2':
             popup = self.addSystemWidget()
             self.togglePopupWindow(popup)
 
-        if key in ('q', 'Q'):
+        if key in ('i', 'I' 'f3'):
+            self.addMissingGames()
+
+        if key in ('s', 'S', 'f4'):
+            self.scraperMode = 'full'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
+        if key == 'f5':
+            popup = self.saveWindow()
+            self.togglePopupWindow(popup, 90, 15)
+
+        if key in ('v', 'f7'):
+            popup = self.viewXml()
+            self.togglePopupWindow(popup, 90)
+
+        if key in ('q', 'Q', 'f10'):
             self.quit()
 
-        if key in ('s', 'S'):
-            self.scraperMode = 'full'
+        if key in ('m', 'M'):
+            self.scraperMode = 'missing'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
@@ -1216,14 +1308,6 @@ class GameslistGUI(object):
             self.scraperMode = 'date only'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
-
-        if key in ('m', 'M'):
-            self.scraperMode = 'missing'
-            popup = self.scraperChoices()
-            self.togglePopupWindow(popup)
-
-        if key in ('i', 'I'):
-            self.addMissingGames()
 
     def scrapeOkButtonAction(self, button, data):
 
@@ -1242,6 +1326,7 @@ class GameslistGUI(object):
                 widget.set_edit_text(value)
                 footerText += prop + u' '
 
+        self.updateGameXml()
         self.updateFooterText(footerText)
         self.closePopupWindow()
 
@@ -1249,6 +1334,7 @@ class GameslistGUI(object):
 
         self.updateGameXml()
         self.saveGameXml()
+        self.closePopupWindow()
 
     def systemsWidgetCallback(self, button, choice):
 
@@ -1258,14 +1344,6 @@ class GameslistGUI(object):
         self.currentGame = None
 
         self.gameEditHolder.original_widget = self.blankWidget
-
-        '''
-        response = urwid.Text('You chose {} \n'.format(choice))
-        button = urwid.Button('Ok')
-        reversedbutton = urwid.AttrMap(button, None, focus_map='activeButton')
-        pile = urwid.Pile([response, reversedbutton])
-        filler = urwid.Filler(pile)
-        '''
 
         games = sorted(self.getOrMakeManager(choice).getGames())
         self.gamesMenu.original_widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
