@@ -2,7 +2,6 @@
 
 '''
 TODO:
-    image browser widget
     renaming rom name changes position in listbox
     clean up all footer messages
     would be nice to see which things have changed
@@ -33,9 +32,7 @@ import urwid
 from pprint import pprint
 from functools import partial
 
-# - Constants --------------------------------------------------
-
-# -- user settings --
+# - User Settings ----------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
@@ -49,7 +46,8 @@ SCRAPER_IMG_MAX_WIDTH = 400
 SCRAPER_IMG_SUFFIX = '-image'
 SCRAPER_USE_EXISTING_IMAGES = True
 
-# -- other settings --
+# - Constants --------------------------------------------------
+
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
@@ -260,6 +258,8 @@ def pathSplit(path):
 
 def readableDateToEsString(dateStr):
 
+    # TODO: use datetime module instead
+
     dateStr = re.findall(r'[\w]+', dateStr)
 
     if not len(dateStr) == 3:
@@ -282,6 +282,8 @@ def readableDateToEsString(dateStr):
     return rdate
 
 def esStringToReadableDate(dateStr):
+
+    # TODO: use datetime module instead
 
     if not dateStr:
         return u''
@@ -392,6 +394,8 @@ class Scraper(object):
                       'platform' : self.systemName}
 
         fileObject = self.__makeRequest__(url, querry)
+        if not fileObject:
+            return []
 
         self.dom = parse(fileObject)
 
@@ -694,6 +698,8 @@ class ManageGameListXML(object):
         self.setData(gameNode, 'path', './' + fileName)
         self.setData(gameNode, 'name', gameName)
 
+# - Temp Function ----------------------------------------------
+
 def test():
 
     system = 'nes'
@@ -710,7 +716,7 @@ def test():
     s.gameSearch()
     print 'Done searching...'
 
-    # get games from scraper
+    # get game result from scraper search
     games = s.getGames()
     game = games[0]
 
@@ -1276,14 +1282,19 @@ class GameslistGUI(object):
 
     def browseForThumbnail(self, directory):
 
+        if not all([self.currentSystem, self.currentGame]):
+            return self.emptyBoxWidget('no system chosen', '')
+
         root, dirs, files = next(os.walk(directory))
 
         matches = ['.png', '.jpg', '.jpeg']
         files = [f for f in files if os.path.splitext(f)[1].lower() in matches]
+        msg = 'Choose Image for:\n{}\n'.format(self.currentGame)
 
+        msgtext = urwid.Text(msg)
         text = urwid.Text(directory)
         blank = urwid.Divider()
-        header = urwid.Pile([text, blank])
+        header = urwid.Pile([msgtext, text, blank])
 
         dirs = ['..'] + dirs
         bodyDirs = self.menuButtonList(dirs, callback=partial(self.browseDirCallback, root), buttonClass=dirButton)
@@ -1299,32 +1310,6 @@ class GameslistGUI(object):
         return widget
 
     # - callbacks --------------------------------------------------------------
-
-    def browseDirCallback(self, folder, button, subfolder):
-
-        self.closePopupWindow()
-        if subfolder == '..':
-            newdir =  os.path.abspath(os.path.join(folder, os.pardir))
-        else:
-            newdir = os.path.join(folder, subfolder)
-        popup = self.browseForThumbnail(newdir)
-        self.togglePopupWindow(popup)
-
-    def browseFileCallback(self, folder, button, resultFile):
-
-        system = self.currentSystem
-        game = self.currentGame
-        p, name, e = pathSplit(self.path.get_edit_text())
-
-        img = os.path.join(folder, resultFile)
-
-        s = Scraper(system, game)
-        imgPathSmall, imgPathXML = s.ingestImage(img, name)
-
-        self.image.set_edit_text(imgPathXML)
-
-        self.closePopupWindow()
-        self.updateFooterText(imgPathSmall)
 
     def keypress(self, key):
 
@@ -1363,23 +1348,23 @@ class GameslistGUI(object):
             popup = self.addSystemWidget()
             self.togglePopupWindow(popup)
 
-        if key in ('i', 'I' 'f3'):
+        if key in ('f3', 'i', 'I'):
             self.addMissingGames()
 
-        if key in ('s', 'S', 'f4'):
+        if key in ('f4', 's', 'S'):
             self.scraperMode = 'full'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
-        if key == 'f5':
+        if key in ('f5', 'u', 'meta s'):
             popup = self.saveWindow()
             self.togglePopupWindow(popup, 90, 15)
 
-        if key in ('v', 'f7'):
+        if key in ('f7', 'v'):
             popup = self.viewXml()
             self.togglePopupWindow(popup, 90)
 
-        if key in ('q', 'Q', 'f10'):
+        if key in ('f10', 'q', 'Q'):
             self.quit()
 
         if key in ('m', 'M'):
@@ -1391,6 +1376,32 @@ class GameslistGUI(object):
             self.scraperMode = 'date only'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
+
+    def browseDirCallback(self, folder, button, subfolder):
+
+        self.closePopupWindow()
+        if subfolder == '..':
+            newdir =  os.path.abspath(os.path.join(folder, os.pardir))
+        else:
+            newdir = os.path.join(folder, subfolder)
+        popup = self.browseForThumbnail(newdir)
+        self.togglePopupWindow(popup)
+
+    def browseFileCallback(self, folder, button, resultFile):
+
+        system = self.currentSystem
+        game = self.currentGame
+        p, name, e = pathSplit(self.path.get_edit_text())
+
+        img = os.path.join(folder, resultFile)
+
+        s = Scraper(system, game)
+        imgPathSmall, imgPathXML = s.ingestImage(img, name)
+
+        self.image.set_edit_text(imgPathXML)
+
+        self.closePopupWindow()
+        self.updateFooterText(imgPathSmall)
 
     def scrapeOkButtonAction(self, button, data):
 
