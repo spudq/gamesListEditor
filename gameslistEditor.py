@@ -7,6 +7,7 @@ TODO:
     would be nice to see which things have changed
     need better job keeping track of changes
     save all xmls option
+    make messages more interactive (better feedback)
 '''
 
 # - Imports ----------------------------------------------------
@@ -728,6 +729,7 @@ def test():
     print fp
 
 # - URWID Below ------------------------------------------------
+
 class fileButton(urwid.Button):
     def __init__(self, caption, callback=None):
         super(fileButton, self).__init__("")
@@ -975,11 +977,12 @@ class GameslistGUI(object):
 
         return urwid.Columns([(u'pack', labelWidget), map])
 
-    def minimalButton(self, *args, **kwargs):
+    def minimalButton(self, label, callback=None):
 
-        button = urwid.Button(*args, **kwargs)
-        buttonText = button.get_label()
-        return urwid.Padding(button, width=len(buttonText)+4)
+        button = fileButton(label)
+        if callback:
+            urwid.connect_signal(button, 'click', callback)
+        return urwid.Padding(button, width=len(label)+1)
 
     def lineBoxWrap(self, widget, title, padding=2, attrMap='primaryBackground'):
 
@@ -1001,15 +1004,26 @@ class GameslistGUI(object):
 
     def buttonsWidget(self):
 
-        applyButton = self.minimalButton('Save Changes')
-        urwid.connect_signal(applyButton.original_widget, 'click', self.saveGameXmlCallback)
+        body = [
+            self.minimalButton('F1:Help',
+                partial(self.bottomButtonsCallback, 'f1')),
+            self.minimalButton('F2:+Sys',
+                partial(self.bottomButtonsCallback, 'f2')),
+            self.minimalButton('F3:+Game',
+                partial(self.bottomButtonsCallback, 'f3')),
+            self.minimalButton('F4:Save',
+                partial(self.bottomButtonsCallback, 'f4')),
+            self.minimalButton('F5:SFull',
+                partial(self.bottomButtonsCallback, 'f5')),
+            self.minimalButton('F6:SMiss',
+                partial(self.bottomButtonsCallback, 'f6')),
+            self.minimalButton('F7:View',
+                partial(self.bottomButtonsCallback, 'f7')),
+            self.minimalButton('F10:Quit',
+                partial(self.bottomButtonsCallback, 'f10')),
+            ]
 
-        closeButtom = self.minimalButton('Quit')
-        urwid.connect_signal(closeButtom.original_widget, 'click', self.quit)
-
-        body = [applyButton, closeButtom]
-
-        gridFlow = urwid.GridFlow(body, 20, 0, 0, 'left')
+        gridFlow = urwid.GridFlow(body, 9, 2, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
@@ -1100,9 +1114,11 @@ class GameslistGUI(object):
         blank = urwid.Divider()
 
         description = (
-                'Gui for editing gamelist.xml files. This tool is mostly intended ' +
-                'for manual editing of fields and making small changes. However ' + 
-                'it can be used to scrape data and images for a single game at a time.\n' + 
+                'Gui for editing gamelist.xml files. This tool is intended ' +
+                'for making small changes rather than mass editing. \n' + 
+                'It does include a very simple scraper to pull down data and images ' + 
+                'for a single game at a time.\n' + 
+                ''+
                 '\nThe hotkeys listed below all work when not over an editable field. ' +
                 'Otherwise use any of the F-keys instead. ')
 
@@ -1115,18 +1131,21 @@ class GameslistGUI(object):
             blank,
             urwid.AttrMap(urwid.Text('<F2>, <n>'), 'bodyText'),
             urwid.Text(('Add new system, eg. create new gamelist.xml file under' + 
-                ' a games folder')),
+                ' a chosen games folder')),
             blank,
             urwid.AttrMap(urwid.Text('<F3>, <i>'), 'bodyText'),
             urwid.Text('Add games from disc missing in xml for current gamelist.xml'),
             blank,
-            urwid.AttrMap(urwid.Text('<F4>, <s>'), 'bodyText'),
+            urwid.AttrMap(urwid.Text('<F4>, <alt+s>, <u>'), 'bodyText'),
+            urwid.Text('Save/Update current gamelist.xml'),
+            blank,
+            urwid.AttrMap(urwid.Text('<F5>, <s>'), 'bodyText'),
             urwid.Text(('Scrape Full: Overwrite all fields with data ' + 
                 'found on gamesdb.net. Images will be downloaded if not in' + 
                 ' expected directory')),
             blank,
-            urwid.AttrMap(urwid.Text('<F5>'), 'bodyText'),
-            urwid.Text('Save current gamelist.xml'),
+            urwid.AttrMap(urwid.Text('<F6>, <m>'), 'bodyText'),
+            urwid.Text('Scrape Missing: Scrape only empty fields.'),
             blank,
             urwid.AttrMap(urwid.Text('<F7>, <v>'), 'bodyText'),
             urwid.Text('View current gamelist.xml (not an editor just a viewer)'),
@@ -1134,8 +1153,8 @@ class GameslistGUI(object):
             urwid.AttrMap(urwid.Text('<F10>, <q>'), 'bodyText'),
             urwid.Text('Exit This Program'),
             blank,
-            urwid.AttrMap(urwid.Text('<m>'), 'bodyText'),
-            urwid.Text('Scrape Missing: Scrape only empty fields.'),
+            urwid.AttrMap(urwid.Text('<b>'), 'bodyText'),
+            urwid.Text('Browse for new image on disc'),
             blank,
             urwid.AttrMap(urwid.Text('<d>'), 'bodyText'),
             urwid.Text('Scrape Date: Scrape only game release date.'),
@@ -1332,17 +1351,10 @@ class GameslistGUI(object):
         # self.updateFooterText(str(key))
         # return
 
-        if key == 'b':
-            popup = self.browseForThumbnail(ROMS_DIR)
-            self.togglePopupWindow(popup)
-
-        if key == 'esc':
-            if self.panelOpen:
-                self.closePopupWindow()
 
         if key == 'f1':
             popup = self.helpWindow()
-            self.togglePopupWindow(popup, 70)
+            self.togglePopupWindow(popup, 65, 80)
 
         if key == 'f2':
             popup = self.addSystemWidget()
@@ -1351,14 +1363,19 @@ class GameslistGUI(object):
         if key in ('f3', 'i', 'I'):
             self.addMissingGames()
 
-        if key in ('f4', 's', 'S'):
+        if key in ('f4', 'u', 'meta s'):
+            popup = self.saveWindow()
+            self.togglePopupWindow(popup, 90, 15)
+
+        if key in ('f5', 's', 'S'):
             self.scraperMode = 'full'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
-        if key in ('f5', 'u', 'meta s'):
-            popup = self.saveWindow()
-            self.togglePopupWindow(popup, 90, 15)
+        if key in ('f6', 'm', 'M'):
+            self.scraperMode = 'missing'
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
 
         if key in ('f7', 'v'):
             popup = self.viewXml()
@@ -1367,15 +1384,21 @@ class GameslistGUI(object):
         if key in ('f10', 'q', 'Q'):
             self.quit()
 
-        if key in ('m', 'M'):
-            self.scraperMode = 'missing'
-            popup = self.scraperChoices()
+        if key == 'b':
+            popup = self.browseForThumbnail(ROMS_DIR)
             self.togglePopupWindow(popup)
 
         if key == 'd':
             self.scraperMode = 'date only'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
+
+        if key == 'esc':
+            if self.panelOpen:
+                self.closePopupWindow()
+
+    def bottomButtonsCallback(self, *args):
+        self.keypress(args[0])
 
     def browseDirCallback(self, folder, button, subfolder):
 
@@ -1610,6 +1633,7 @@ class BWTheme(GameslistGUI):
 # - Launcher ---------------------------------------------------------------
 
 def parseArgs():
+
     desc = 'Tool to edit gamelist.xml files'
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--colorsceme', '-c',
