@@ -2,6 +2,7 @@
 
 '''
 TODO:
+    image browser widget
     renaming rom name changes position in listbox
     clean up all footer messages
     would be nice to see which things have changed
@@ -49,7 +50,6 @@ SCRAPER_IMG_SUFFIX = '-image'
 SCRAPER_USE_EXISTING_IMAGES = True
 
 # -- other settings --
-
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
@@ -321,7 +321,7 @@ def simplifySearchString(searchString):
 
 class Scraper(object):
 
-    def __init__(self, system, searchQuery, timeout=None, exactname=None):
+    def __init__(self, system, searchQuery, timeout=None):
 
         # userAgent can be anything but python apparently
         # so I told gamesdb that this is my browser
@@ -332,7 +332,6 @@ class Scraper(object):
         self.systemName = GAMESDB_SYSTEMS.get(system)
         self.dom = None
         self.domValid = False
-        self.gameSearch(exactname=exactname)
 
     def __makeRequest__(self, url, request={}, retrys=3):
 
@@ -499,7 +498,7 @@ class Scraper(object):
             url = baseImgUrl + boxArtNode.firstChild.data
             return url
 
-    def downloadArt(self, url, outputImgName):
+    def getImageName(self, oldImageName, outputImgName):
 
         # get output directories
         imdDirFull = IMAGE_DIR_FULL.format(system=self.system)
@@ -508,7 +507,7 @@ class Scraper(object):
         suffix = SCRAPER_IMG_SUFFIX
 
         # get image name
-        imgExt = os.path.splitext(url)[1]
+        imgExt = os.path.splitext(oldImageName)[1]
         imgName = os.sep + outputImgName + suffix + imgExt
 
         # output paths
@@ -516,14 +515,26 @@ class Scraper(object):
         imgPathSmall = imgDirSmall + imgName
         imgPathXML += imgName
 
+        # make output directories
+        mkdir_p(imdDirFull)
+        mkdir_p(imgDirSmall)
+
+        return imgPathFull, imgPathSmall, imgPathXML
+
+    def resizeImage(self, source, target):
+
+        s = 'x{}>'.format(SCRAPER_IMG_MAX_WIDTH)
+        cmd = ['convert', '-resize', s, source, target]
+        subprocess.check_call(cmd)
+
+    def downloadArt(self, url, outputImgName):
+
+        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(url, outputImgName)
+
         # check if image alredy exists (use it)
         if SCRAPER_USE_EXISTING_IMAGES:
             if os.path.exists(imgPathSmall):
                 return imgPathSmall, imgPathXML
-
-        # make output directories
-        mkdir_p(imdDirFull)
-        mkdir_p(imgDirSmall)
 
         # download image
         f = self.__makeRequest__(url)
@@ -531,10 +542,16 @@ class Scraper(object):
         with open(imgPathFull, 'w') as f:
             f.write(fd)
 
-        # resize command
-        s = 'x{}>'.format(SCRAPER_IMG_MAX_WIDTH)
-        cmd = ['convert', '-resize', s, imgPathFull, imgPathSmall]
-        subprocess.check_call(cmd)
+        # resize
+        self.resizeImage(imgPathFull, imgPathSmall)
+
+        return imgPathSmall, imgPathXML
+
+    def ingestImage(self, origImgPath, outputImgName):
+
+        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(origImgPath, outputImgName)
+        shutil.copyfile(origImgPath, imgPathFull)
+        self.resizeImage(imgPathFull, imgPathSmall)
         return imgPathSmall, imgPathXML
 
 # - XML Manager ------------------------------------------------
@@ -690,6 +707,7 @@ def test():
 
     print 'Searching for scraping options'
     s = Scraper(system, simplifySearchString(game))
+    s.gameSearch()
     print 'Done searching...'
 
     # get games from scraper
@@ -704,6 +722,17 @@ def test():
     print fp
 
 # - URWID Below ------------------------------------------------
+class fileButton(urwid.Button):
+    def __init__(self, caption, callback=None):
+        super(fileButton, self).__init__("")
+        urwid.connect_signal(self, 'click', callback) if callback else None
+        self._w = urwid.AttrMap(urwid.SelectableIcon(caption, 0), None, focus_map='activeButton')
+
+class dirButton(urwid.Button):
+    def __init__(self, caption, callback=None):
+        super(dirButton, self).__init__("")
+        urwid.connect_signal(self, 'click', callback) if callback else None
+        self._w = urwid.AttrMap(urwid.SelectableIcon(caption, 0), 'bodyText', focus_map='activeButton')
 
 class GameslistGUI(object):
 
@@ -918,11 +947,11 @@ class GameslistGUI(object):
         text = urwid.AttrMap(text, 'footerText')
         self.footer.original_widget = text
 
-    def menuButtonList(self, choices, callback=None):
+    def menuButtonList(self, choices, callback=None, buttonClass=urwid.Button):
 
         body = []
         for choice in choices:
-            button = urwid.Button(choice)
+            button = buttonClass(choice)
             if callback:
                 urwid.connect_signal(button, 'click', callback, choice)
             button = urwid.AttrMap(button, None, focus_map='activeButton')
@@ -1139,6 +1168,7 @@ class GameslistGUI(object):
             title = simplifySearchString(title)
 
             self.scrapeInstance = Scraper(self.currentSystem, title)
+            self.scrapeInstance.gameSearch()
             results = self.scrapeInstance.getGames()
 
             menu = self.menuWidget(
@@ -1244,7 +1274,57 @@ class GameslistGUI(object):
         widget = self.lineBoxWrap(fillerl, 'Save?')
         return widget
 
+    def browseForThumbnail(self, directory):
+
+        root, dirs, files = next(os.walk(directory))
+
+        matches = ['.png', '.jpg', '.jpeg']
+        files = [f for f in files if os.path.splitext(f)[1].lower() in matches]
+
+        text = urwid.Text(directory)
+        blank = urwid.Divider()
+        header = urwid.Pile([text, blank])
+
+        dirs = ['..'] + dirs
+        bodyDirs = self.menuButtonList(dirs, callback=partial(self.browseDirCallback, root), buttonClass=dirButton)
+        bodyFiles = self.menuButtonList(files, callback=partial(self.browseFileCallback, root), buttonClass=fileButton)
+        body = bodyDirs + [blank] + bodyFiles
+
+        lw = urwid.SimpleFocusListWalker(body)
+        box = urwid.ListBox(lw)
+
+        frameWidget = urwid.Frame(box, header=header, footer=None)
+        widget = self.lineBoxWrap(frameWidget, 'Browse')
+
+        return widget
+
     # - callbacks --------------------------------------------------------------
+
+    def browseDirCallback(self, folder, button, subfolder):
+
+        self.closePopupWindow()
+        if subfolder == '..':
+            newdir =  os.path.abspath(os.path.join(folder, os.pardir))
+        else:
+            newdir = os.path.join(folder, subfolder)
+        popup = self.browseForThumbnail(newdir)
+        self.togglePopupWindow(popup)
+
+    def browseFileCallback(self, folder, button, resultFile):
+
+        system = self.currentSystem
+        game = self.currentGame
+        p, name, e = pathSplit(self.path.get_edit_text())
+
+        img = os.path.join(folder, resultFile)
+
+        s = Scraper(system, game)
+        imgPathSmall, imgPathXML = s.ingestImage(img, name)
+
+        self.image.set_edit_text(imgPathXML)
+
+        self.closePopupWindow()
+        self.updateFooterText(imgPathSmall)
 
     def keypress(self, key):
 
@@ -1261,12 +1341,15 @@ class GameslistGUI(object):
         f10 menu/do/quit(when max key)
         f11 fullscreen
         f12 save as
-
         '''
 
         # show key names
         # self.updateFooterText(str(key))
         # return
+
+        if key == 'b':
+            popup = self.browseForThumbnail(ROMS_DIR)
+            self.togglePopupWindow(popup)
 
         if key == 'esc':
             if self.panelOpen:
