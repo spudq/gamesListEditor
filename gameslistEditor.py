@@ -54,6 +54,7 @@ MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
 
+# game data tags to extract from gamelist.xml files
 GAMELIST_TAGS = ['path', 'name', 'image', 'rating', 'releasedate',
                  'developer', 'publisher', 'genre', 'players',
                  'playcount', 'lastplayed', 'desc']
@@ -222,6 +223,7 @@ SCRAPER_NAME_SWAPS = {
         'megaman': 'Mega Man',
         }
 
+
 # - Generic Functions ---------------------------------------------------------
 
 
@@ -267,6 +269,7 @@ def backupFile(path):
 
 
 def pathSplit(path):
+
     fp, fn = os.path.split(path)
     bn, ext = os.path.splitext(fn)
     return fp, bn, ext
@@ -977,7 +980,7 @@ class GameslistGUI(object):
         self.refreshGames()
         xmlpath = xmlManager.xmlpath
         text = 'Updated: {} with {} games'.format(xmlpath, len(games))
-        self.updateFooterText()
+        self.updateFooterText(text)
 
     def refreshGames(self):
 
@@ -1002,8 +1005,8 @@ class GameslistGUI(object):
             body.append(button)
         return body
 
-    def field(self, var, label=None, defaultText=u'',
-              multiline=False, callback=None):
+    def field(self, var, label=None, defaultText=u'', multiline=False,
+              callback=None, button=None, buttonCallback=None):
 
         label = label or var
         label = label + u': '
@@ -1012,7 +1015,13 @@ class GameslistGUI(object):
         map = urwid.AttrMap(editWidget, u'bodyText', u'edittext')
         setattr(self, var, editWidget)
 
-        return urwid.Columns([(u'pack', labelWidget), map])
+        if button:
+            l = len(button) + 3
+            buttonText = u'<{}>'.format(button)
+            button = self.minimalButton(buttonText, callback=buttonCallback)
+            return urwid.Columns([(u'pack', labelWidget), (l, button), map])
+        else:
+            return urwid.Columns([(u'pack', labelWidget), map])
 
     def minimalButton(self, label, callback=None):
 
@@ -1082,7 +1091,10 @@ class GameslistGUI(object):
         body = [
             blank, self.field(u'path'),
             blank, self.field(u'name'),
-            blank, self.field(u'image'),
+            blank, self.field(u'image',
+                       button='browse',
+                       buttonCallback=partial(self.bottomButtonsCallback, 'b')
+                       ),
             blank, self.field(u'rating'),
             blank, self.field(u'releasedate', u'releasedate(MM/DD/YYYY)'),
             blank, self.field(u'developer'),
@@ -1680,3 +1692,4 @@ if __name__ == '__main__':
     else:
         GameslistGUI().start()
 
+#
