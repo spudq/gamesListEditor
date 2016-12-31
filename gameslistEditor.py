@@ -2,15 +2,16 @@
 
 '''
 TODO:
+    add ability to edit in external editor
     renaming rom name changes position in listbox
     clean up all footer messages
-    would be nice to see which things have changed
     need better job keeping track of changes
+    would be nice to see which things have changed
     save all xmls option
-    make messages more interactive (better feedback)
+    make messages more interactive (better feedback) (unified gui style)
 '''
 
-# - Imports ----------------------------------------------------
+# - Imports -------------------------------------------------------------------
 
 import os
 import re
@@ -33,7 +34,7 @@ import urwid
 from pprint import pprint
 from functools import partial
 
-# - User Settings ----------------------------------------------
+# - User Settings -------------------------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
 ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
@@ -47,11 +48,15 @@ SCRAPER_IMG_MAX_WIDTH = 400
 SCRAPER_IMG_SUFFIX = '-image'
 SCRAPER_USE_EXISTING_IMAGES = True
 
-# - Constants --------------------------------------------------
+# - Constants -----------------------------------------------------------------
 
 MONTHS = ['jan', 'feb', 'mar', 'apr',
           'may', 'jun', 'jul', 'aug',
           'sep', 'oct', 'nov', 'dec']
+
+GAMELIST_TAGS = ['path', 'name', 'image', 'rating', 'releasedate',
+                 'developer', 'publisher', 'genre', 'players',
+                 'playcount', 'lastplayed', 'desc']
 
 # from Emulation Station Wiki
 ROM_EXTENSIONS = {
@@ -60,17 +65,21 @@ ROM_EXTENSIONS = {
         'amstradcpc': ['.dsk', '.cpc'],
         'apple2': ['.dsk'],
         'atari2600': ['.bin', '.a26', '.rom', '.zip', '.gz'],
-        'atari800': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
-        'atari5200': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm', '.atr.gz', '.xfd.gz'],
+        'atari800': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm',
+                     '.atr.gz', '.xfd.gz'],
+        'atari5200': ['.a52', '.bas', '.bin', '.xex', '.atr', '.xfd', '.dcm',
+                      '.atr.gz', '.xfd.gz'],
         'atari7800': ['.a78', '.bin'],
         'atarijaguar': ['.j64', '.jag'],
         'atarilynx': ['.lnx'],
         'atarist': ['.st', '.stx', '.img', '.rom', '.raw', '.ipf', '.ctr'],
-        'coco': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+        'coco': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9',
+                 '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
         'coleco': ['.bin', '.col', '.rom', '.zip'],
         'c64': ['.crt', '.d64', '.g64', '.t64', '.tap', '.x64'],
         'daphne': [''],
-        'dragon32': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9', '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
+        'dragon32': ['.cas', '.wav', '.bas', '.asc', '.dmk', '.jvc', '.os9',
+                     '.dsk', '.vdk', '.rom', '.ccc', '.sna'],
         'dreamcast': ['.cdi', '.gdi'],
         'fba': ['.zip'],
         'neogeo': ['.zip'],
@@ -97,8 +106,10 @@ ROM_EXTENSIONS = {
         'pc': ['.com', '.sh', '.bat', '.exe'],
         'pcengine': ['.pce'],
         'psp': ['.cso', '.iso', '.pbp'],
-        'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc', '.z', '.znx'],
-        'ps2': ['.iso', '.img', '.bin', '.mdf', '.z', '.z2', '.bz2', '.dump', '.cso', '.ima', '.gz'],
+        'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc',
+                '.z', '.znx'],
+        'ps2': ['.iso', '.img', '.bin', '.mdf', '.z', '.z2', '.bz2', '.dump',
+                '.cso', '.ima', '.gz'],
         'samcoupe': ['.dsk', '.mgt', '.sbt', '.sad'],
         'saturn': ['.bin', '.iso', '.mdf'],
         'scummvm': ['.sh', '.svm'],
@@ -113,108 +124,111 @@ ROM_EXTENSIONS = {
         'wii': ['.iso'],
         'wonderswan': ['.ws'],
         'wonderswancolor': ['.wsc'],
-        'zmachine': ['.dat', '.zip', '.z1', '.z2', '.z3', '.z4', '.z5', '.z6', '.z7', '.z8'],
-        'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi', '.mgt', '.img', '.trd', '.scl', '.dsk']
+        'zmachine': ['.dat', '.zip', '.z1', '.z2', '.z3', '.z4', '.z5', '.z6',
+                     '.z7', '.z8'],
+        'zxspectrum': ['sna', '.szx', '.z80', '.tap', '.tzx', '.gz', '.udi',
+                       '.mgt', '.img', '.trd', '.scl', '.dsk']
         }
 
 # from Emulation Station Source code
 GAMESDB_SYSTEMS = {
-        '3do' : '3DO',
-        'amiga' : 'Amiga',
-        'amstradcpc' : 'Amstrad CPC',
-        'arcade' : 'Arcade',
-        'atari2600' : 'Atari 2600',
-        'atari5200' : 'Atari 5200',
-        'atari7800' : 'Atari 7800',
-        'atarilynx' : 'Atari Lynx',
-        'atarijaguar' : 'Atari Jaguar',
-        'atarijaguarcd' : 'Atari Jaguar CD',
-        'atarixe' : 'Atari XE',
-        'colecovision' : 'Colecovision',
-        'c64' : 'Commodore 64',
-        'intellivision' : 'Intellivision',
-        'macintosh' : 'Mac OS',
-        'xbox' : 'Microsoft Xbox',
-        'xbox360' : 'Microsoft Xbox 360',
-        'neogeo' : 'NeoGeo',
-        'ngp' : 'Neo Geo Pocket',
-        'ngpc' : 'Neo Geo Pocket Color',
-        'n3ds' : 'Nintendo 3DS',
-        'n64' : 'Nintendo 64',
-        'nds' : 'Nintendo DS',
-        'nes' : 'Nintendo Entertainment System (NES)',
+        '3do': '3DO',
+        'amiga': 'Amiga',
+        'amstradcpc': 'Amstrad CPC',
+        'arcade': 'Arcade',
+        'atari2600': 'Atari 2600',
+        'atari5200': 'Atari 5200',
+        'atari7800': 'Atari 7800',
+        'atarilynx': 'Atari Lynx',
+        'atarijaguar': 'Atari Jaguar',
+        'atarijaguarcd': 'Atari Jaguar CD',
+        'atarixe': 'Atari XE',
+        'colecovision': 'Colecovision',
+        'c64': 'Commodore 64',
+        'intellivision': 'Intellivision',
+        'macintosh': 'Mac OS',
+        'xbox': 'Microsoft Xbox',
+        'xbox360': 'Microsoft Xbox 360',
+        'neogeo': 'NeoGeo',
+        'ngp': 'Neo Geo Pocket',
+        'ngpc': 'Neo Geo Pocket Color',
+        'n3ds': 'Nintendo 3DS',
+        'n64': 'Nintendo 64',
+        'nds': 'Nintendo DS',
+        'nes': 'Nintendo Entertainment System (NES)',
         'mame-mame4all': 'Arcade',
-        'gb' : 'Nintendo Game Boy',
-        'gba' : 'Nintendo Game Boy Advance',
-        'gbc' : 'Nintendo Game Boy Color',
-        'gc' : 'Nintendo GameCube',
-        'wii' : 'Nintendo Wii',
-        'wiiu' : 'Nintendo Wii U',
-        'pc' : 'PC',
-        'sega32x' : 'Sega 32X',
-        'segacd' : 'Sega CD',
-        'dreamcast' : 'Sega Dreamcast',
-        'gamegear' : 'Sega Game Gear',
-        'genesis' : 'Sega Genesis',
-        'mastersystem' : 'Sega Master System',
-        'megadrive' : 'Sega Mega Drive',
-        'saturn' : 'Sega Saturn',
-        'psx' : 'Sony Playstation',
-        'ps2' : 'Sony Playstation 2',
-        'ps3' : 'Sony Playstation 3',
-        'ps4' : 'Sony Playstation 4',
-        'psvita' : 'Sony Playstation Vita',
-        'psp' : 'Sony PSP',
-        'snes' : 'Super Nintendo (SNES)',
-        'pcengine' : 'TurboGrafx 16',
-        'wonderswan' : 'WonderSwan',
-        'wonderswancolor' : 'WonderSwan Color',
-        'zxspectrum' : 'Sinclair ZX Spectrum',
+        'gb': 'Nintendo Game Boy',
+        'gba': 'Nintendo Game Boy Advance',
+        'gbc': 'Nintendo Game Boy Color',
+        'gc': 'Nintendo GameCube',
+        'wii': 'Nintendo Wii',
+        'wiiu': 'Nintendo Wii U',
+        'pc': 'PC',
+        'sega32x': 'Sega 32X',
+        'segacd': 'Sega CD',
+        'dreamcast': 'Sega Dreamcast',
+        'gamegear': 'Sega Game Gear',
+        'genesis': 'Sega Genesis',
+        'mastersystem': 'Sega Master System',
+        'megadrive': 'Sega Mega Drive',
+        'saturn': 'Sega Saturn',
+        'psx': 'Sony Playstation',
+        'ps2': 'Sony Playstation 2',
+        'ps3': 'Sony Playstation 3',
+        'ps4': 'Sony Playstation 4',
+        'psvita': 'Sony Playstation Vita',
+        'psp': 'Sony PSP',
+        'snes': 'Super Nintendo (SNES)',
+        'pcengine': 'TurboGrafx 16',
+        'wonderswan': 'WonderSwan',
+        'wonderswancolor': 'WonderSwan Color',
+        'zxspectrum': 'Sinclair ZX Spectrum',
         }
 
 # from Wikipedia
 GOODMERGE_COUNTRY_CODES = {
-        '(A)':'(Australia)',
-        '(As)':'(Asia)',
-        '(B)':'(Brazil)',
-        '(C)':'(Canada)',
-        '(Ch)':'(China)',
-        '(D)':'(Netherlands, Dutch)',
-        '(E)':'(Europe)',
-        '(F)':'(France)',
-        '(G)':'(Germany)',
-        '(Gr)':'(Greece)',
-        '(HK)':'(Hong Kong)',
-        '(I)':'(Italy)',
-        '(J)':'(Japan)',
-        '(JU)':'(Japan, USA)',
-        '(K)':'(Korea)',
-        '(Nl)':'(Netherlands)',
-        '(No)':'(Norway)',
-        '(R)':'(Russia)',
-        '(S)':'(Spain)',
-        '(Sw)':'(Sweden)',
-        '(U)':'(USA)',
-        '(UE)':'(USA, Europe)',
-        '(UK)':'(United Kingdom)',
-        '(W)':'(World)',
-        '(Unl)':'(Unlicensed)',
-        '(PD)':'(Public domain)',
+        '(A)': '(Australia)',
+        '(As)': '(Asia)',
+        '(B)': '(Brazil)',
+        '(C)': '(Canada)',
+        '(Ch)': '(China)',
+        '(D)': '(Netherlands, Dutch)',
+        '(E)': '(Europe)',
+        '(F)': '(France)',
+        '(G)': '(Germany)',
+        '(Gr)': '(Greece)',
+        '(HK)': '(Hong Kong)',
+        '(I)': '(Italy)',
+        '(J)': '(Japan)',
+        '(JU)': '(Japan, USA)',
+        '(K)': '(Korea)',
+        '(Nl)': '(Netherlands)',
+        '(No)': '(Norway)',
+        '(R)': '(Russia)',
+        '(S)': '(Spain)',
+        '(Sw)': '(Sweden)',
+        '(U)': '(USA)',
+        '(UE)': '(USA, Europe)',
+        '(UK)': '(United Kingdom)',
+        '(W)': '(World)',
+        '(Unl)': '(Unlicensed)',
+        '(PD)': '(Public domain)',
         }
 
 # hard coded rom name search fixes
 # In case the rom name doesn't match games db title
 # this doesn't seem very elegant might try something different
 SCRAPER_NAME_SWAPS = {
-        'megaman':'Mega Man',
+        'megaman': 'Mega Man',
         }
 
-# - Generic Functions ------------------------------------------
+# - Generic Functions ---------------------------------------------------------
+
 
 def mkdir_p(path):
     '''make a directory
-
-    from http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
+    from...
+    http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
 
     has good explanation on why this is better than
     if not os.path.exists(path):
@@ -227,6 +241,7 @@ def mkdir_p(path):
             pass
         else:
             raise
+
 
 def backupFile(path):
 
@@ -250,12 +265,15 @@ def backupFile(path):
     tp = os.path.join(backupdir, fn + '.backup.' + str(version))
     shutil.copyfile(sp, tp)
 
+
 def pathSplit(path):
     fp, fn = os.path.split(path)
     bn, ext = os.path.splitext(fn)
     return fp, bn, ext
 
-# - Utils ------------------------------------------------------
+
+# - Utils ---------------------------------------------------------------------
+
 
 def readableDateToEsString(dateStr):
 
@@ -282,6 +300,7 @@ def readableDateToEsString(dateStr):
     rdate = yyyy+mm+dd + u'T000000'
     return rdate
 
+
 def esStringToReadableDate(dateStr):
 
     # TODO: use datetime module instead
@@ -293,11 +312,13 @@ def esStringToReadableDate(dateStr):
     yyyy = dateStr[:4]
     mm = dateStr[4:6]
     dd = dateStr[6:8]
-    return '/'.join([ mm, dd, yyyy ])
+    return '/'.join([mm, dd, yyyy])
+
 
 def getGamelist(system):
 
     return os.path.join(ROMS_DIR, system, u'gamelist.xml')
+
 
 def getSystems():
 
@@ -307,7 +328,9 @@ def getSystems():
         if os.path.exists(glpath):
             yield d
 
-# - Scraper ----------------------------------------------------
+
+# - Scraper -------------------------------------------------------------------
+
 
 def simplifySearchString(searchString):
 
@@ -322,13 +345,15 @@ def simplifySearchString(searchString):
 
     return searchString
 
+
 class Scraper(object):
 
     def __init__(self, system, searchQuery, timeout=None):
 
         # userAgent can be anything but python apparently
         # so I told gamesdb that this is my browser
-        self.userAgent = 'Mozilla/5.0 (Windows NT 6.3; WOW64; rv:50.0) Gecko/20100101 Firefox/50.0'
+        self.userAgent = ('Mozilla/5.0 (Windows NT 6.3; WOW64; rv:50.0) '
+                          'Gecko/20100101 Firefox/50.0')
         self.system = system
         self.searchQuery = searchQuery
         self.timeout = timeout
@@ -339,7 +364,7 @@ class Scraper(object):
     def __makeRequest__(self, url, request={}, retrys=3):
 
         querry = urllib.urlencode(request)
-        headers = {'User-Agent' : self.userAgent}
+        headers = {'User-Agent': self.userAgent}
         request = urllib2.Request(url, querry, headers=headers)
 
         attempts = 0
@@ -373,7 +398,7 @@ class Scraper(object):
         '''
         pairs1 = self.getBigrams(str1)
         pairs2 = self.getBigrams(str2)
-        union  = len(pairs1) + len(pairs2)
+        union = len(pairs1) + len(pairs2)
         hit_count = 0
         for x in pairs1:
             for y in pairs2:
@@ -389,10 +414,10 @@ class Scraper(object):
 
         if exactname:
             querry = {'exactname': exactname,
-                      'platform' : self.systemName}
+                      'platform': self.systemName}
         else:
             querry = {'name': search,
-                      'platform' : self.systemName}
+                      'platform': self.systemName}
 
         fileObject = self.__makeRequest__(url, querry)
         if not fileObject:
@@ -412,7 +437,7 @@ class Scraper(object):
         # all of the data needed so the game will need
         # to be searched all over again once the game name is found
         url = 'http://thegamesdb.net/api/GetGamesList.php'
-        querry = {'name': search, 'platform' : self.systemName}
+        querry = {'name': search, 'platform': self.systemName}
         fileObject = self.__makeRequest__(url, querry)
 
         self.dom = parse(fileObject)
@@ -462,16 +487,16 @@ class Scraper(object):
         for element in elements:
             genres.append(element.firstChild.data)
 
-        return dict(
-            name = self.__xmlValue__(gameNode, 'GameTitle'),
-            releasedate = self.__xmlValue__(gameNode, 'ReleaseDate'),
-            genre = u', '.join(genres),
-            rating = self.__xmlValue__(gameNode, 'Rating'),
-            developer = self.__xmlValue__(gameNode, 'Developer'),
-            publisher = self.__xmlValue__(gameNode, 'Publisher'),
-            players = self.__xmlValue__(gameNode, 'Players'),
-            desc = self.__xmlValue__(gameNode, 'Overview'),
-            )
+        return {
+            'name':        self.__xmlValue__(gameNode, 'GameTitle'),
+            'releasedate': self.__xmlValue__(gameNode, 'ReleaseDate'),
+            'genre':       u', '.join(genres),
+            'rating':      self.__xmlValue__(gameNode, 'Rating'),
+            'developer':   self.__xmlValue__(gameNode, 'Developer'),
+            'publisher':   self.__xmlValue__(gameNode, 'Publisher'),
+            'players':     self.__xmlValue__(gameNode, 'Players'),
+            'desc':        self.__xmlValue__(gameNode, 'Overview'),
+            }
 
     def getBoxArtUrl(self, exactName):
 
@@ -534,7 +559,8 @@ class Scraper(object):
 
     def downloadArt(self, url, outputImgName):
 
-        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(url, outputImgName)
+        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(
+                url, outputImgName)
 
         # check if image alredy exists (use it)
         if SCRAPER_USE_EXISTING_IMAGES:
@@ -554,12 +580,15 @@ class Scraper(object):
 
     def ingestImage(self, origImgPath, outputImgName):
 
-        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(origImgPath, outputImgName)
+        imgPathFull, imgPathSmall, imgPathXML = self.getImageName(
+                origImgPath, outputImgName)
         shutil.copyfile(origImgPath, imgPathFull)
         self.resizeImage(imgPathFull, imgPathSmall)
         return imgPathSmall, imgPathXML
 
-# - XML Manager ------------------------------------------------
+
+# - XML Manager ---------------------------------------------------------------
+
 
 def newGamesList(system):
 
@@ -576,6 +605,7 @@ def newGamesList(system):
 
     return xmlpath
 
+
 class ManageGameListXML(object):
 
     def __init__(self, system):
@@ -585,12 +615,6 @@ class ManageGameListXML(object):
         self.system = system
         self.dom = parse(self.xmlpath)
         self.gameProperties = []
-        self.gameDatas = [
-                'path', 'name', 'desc', 'image',
-                'rating', 'releasedate',
-                'developer', 'publisher', 'genre',
-                'players', 'playcount', 'lastplayed',
-                ]
 
     def __getNodeForGame__(self, game):
 
@@ -600,10 +624,14 @@ class ManageGameListXML(object):
 
     def findMissingGames(self):
 
+        '''Just try and read this garbage :)'''
+
         exts = ROM_EXTENSIONS.get(self.system)
         path = os.path.join(ROMS_DIR, self.system)
-        gamesOnDisc = [f for f in os.listdir(path) if any(e for e in exts if f.lower().endswith(e.lower()))]
-        gamesInXML = [g.split('/').pop() for g in list(self.getGames(False)) if '/' in g]
+        gamesOnDisc = [f for f in os.listdir(path) if any(
+            e for e in exts if f.lower().endswith(e.lower()))]
+        gamesInXML = [g.split('/').pop() for g in list(
+            self.getGames(False)) if '/' in g]
         return list(set(gamesOnDisc) - set(gamesInXML))
 
     def setData(self, parentNode, name, value):
@@ -657,7 +685,7 @@ class ManageGameListXML(object):
         if not node:
             return data
 
-        for tag in self.gameDatas:
+        for tag in GAMELIST_TAGS:
             data[tag] = self.getData(node, tag) or u''
 
         return data
@@ -673,11 +701,12 @@ class ManageGameListXML(object):
 
         newXML = self.dom.toxml()
         reparsed = parseString(u'{0}'.format(newXML).encode('utf-8'))
-        return u'\n'.join([line for line in reparsed.toprettyxml(indent=u'    '*2).split(u'\n') if line.strip()])
+        xmlLines = reparsed.toprettyxml(indent=u'    '*2).split(u'\n')
+        return u'\n'.join([line for line in xmlLines if line.strip()])
 
     def writeXML(self):
 
-        backupFile( self.xmlpath )
+        backupFile(self.xmlpath)
         xmlOutPath = self.xmlpath
 
         with open(xmlOutPath, 'w') as f:
@@ -699,7 +728,9 @@ class ManageGameListXML(object):
         self.setData(gameNode, 'path', './' + fileName)
         self.setData(gameNode, 'name', gameName)
 
-# - Temp Function ----------------------------------------------
+
+# - Temp Function -------------------------------------------------------------
+
 
 def test():
 
@@ -728,19 +759,25 @@ def test():
     fp, xp = s.downloadArt(url, 'test')
     print fp
 
-# - URWID Below ------------------------------------------------
+
+# - URWID Below ---------------------------------------------------------------
+
 
 class fileButton(urwid.Button):
     def __init__(self, caption, callback=None):
         super(fileButton, self).__init__("")
         urwid.connect_signal(self, 'click', callback) if callback else None
-        self._w = urwid.AttrMap(urwid.SelectableIcon(caption, 0), None, focus_map='activeButton')
+        icon = urwid.SelectableIcon(caption, 0)
+        self._w = urwid.AttrMap(icon, None, focus_map='activeButton')
+
 
 class dirButton(urwid.Button):
     def __init__(self, caption, callback=None):
         super(dirButton, self).__init__("")
         urwid.connect_signal(self, 'click', callback) if callback else None
-        self._w = urwid.AttrMap(urwid.SelectableIcon(caption, 0), 'bodyText', focus_map='activeButton')
+        icon = urwid.SelectableIcon(caption, 0)
+        self._w = urwid.AttrMap(icon, 'bodyText', focus_map='activeButton')
+
 
 class GameslistGUI(object):
 
@@ -754,7 +791,8 @@ class GameslistGUI(object):
         self.panelOpen = False
 
         # widget instances
-        self.systemMenu = self.menuWidget('Game Systems', self.systems, self.systemsWidgetCallback)
+        self.systemMenu = self.menuWidget('Game Systems', self.systems,
+                                          self.systemsWidgetCallback)
         self.gamesMenu = self.menuWidget('Games')
         self.gameEditWidget = self.mainEditWidget()
         self.blankWidget = self.emptyBoxWidget('Game Information')
@@ -766,29 +804,36 @@ class GameslistGUI(object):
         pwidget = urwid.Pile([
                     ('weight', 0.5, cwidget),
                     self.gameEditHolder,
-                    (2,self.buttonsWidget()),
+                    (2, self.buttonsWidget()),
                     ])
 
         # footer
         self.footer = urwid.Text('')
         self.footer = urwid.AttrMap(self.footer, 'footerText')
-        self.frameWidget = urwid.Frame(pwidget, header=None, footer=self.footer)
+        self.frameWidget = urwid.Frame(
+                pwidget, header=None, footer=self.footer)
         self.frameWidget = self.main_shadow(self.frameWidget)
 
         self.body = urwid.WidgetPlaceholder(self.frameWidget)
 
         # do it
-        self.loop = urwid.MainLoop(self.body, self.palette(), unhandled_input=self.keypress)
+        self.loop = urwid.MainLoop(
+                self.body,
+                self.palette(),
+                unhandled_input=self.keypress
+                )
 
     def main_shadow(self, widget):
 
         bg = urwid.AttrWrap(urwid.SolidFill(u"\u2592"), 'deepBackground')
         shadow = urwid.AttrWrap(urwid.SolidFill(u" "), 'dropShadow')
 
-        bg = urwid.Overlay( shadow, bg,
+        bg = urwid.Overlay(
+            shadow, bg,
             ('fixed left', 3), ('fixed right', 1),
             ('fixed top', 2), ('fixed bottom', 1))
-        widget = urwid.Overlay( widget, bg,
+        widget = urwid.Overlay(
+            widget, bg,
             ('fixed left', 2), ('fixed right', 3),
             ('fixed top', 1), ('fixed bottom', 2))
 
@@ -839,21 +884,21 @@ class GameslistGUI(object):
 
         # color palette
         palette = [
-                # for button selections
-                self.paletteItm('activeButton', 'standout', mode='bold'),
-                # for body text
-                self.paletteItm('bodyText', 'yellow', 'dark blue', mode='bold'),
-                # color for text being actively edited
-                self.paletteItm('edittext', fg='white', bg='black'),
-                # background color
-                self.paletteItm('primaryBackground', bg='dark blue'),
-                # for footer text
-                self.paletteItm('footerText', fg='dark blue', bg='light gray'),
-                # for drop shadow
-                self.paletteItm('dropShadow', bg='black'),
-                # for farmost background
-                self.paletteItm('deepBackground', fg='black', bg='light gray'),
-                ]
+            # for button selections
+            self.paletteItm('activeButton', 'standout', mode='bold'),
+            # for body text
+            self.paletteItm('bodyText', 'yellow', 'dark blue', mode='bold'),
+            # color for text being actively edited
+            self.paletteItm('edittext', fg='white', bg='black'),
+            # background color
+            self.paletteItm('bodyColor', bg='dark blue'),
+            # for footer text
+            self.paletteItm('footerText', fg='dark blue', bg='light gray'),
+            # for drop shadow
+            self.paletteItm('dropShadow', bg='black'),
+            # for farmost background
+            self.paletteItm('deepBackground', fg='black', bg='light gray'),
+            ]
 
         return palette
 
@@ -861,7 +906,7 @@ class GameslistGUI(object):
 
         raise urwid.ExitMainLoop()
 
-    # - actions ----------------------------------------------------------------
+    # - actions ---------------------------------------------------------------
 
     def getOrMakeManager(self, system):
 
@@ -901,27 +946,17 @@ class GameslistGUI(object):
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
-        if not self.currentGame in list(xmlManager.getGames()):
+        if self.currentGame not in list(xmlManager.getGames()):
             return
 
-        releasedate = self.releasedate.get_edit_text()
-        releasedate = readableDateToEsString(releasedate)
+        # get field data
+        data = dict()
+        for tag in GAMELIST_TAGS:
+            data[tag] = getattr(self, tag).get_edit_text()
 
-        data = dict(
-            path        = self.path.get_edit_text(),
-            name        = self.name.get_edit_text(),
-            image       = self.image.get_edit_text(),
-            # thumbnail   = self.thumbnail.get_edit_text(),
-            rating      = self.rating.get_edit_text(),
-            releasedate = releasedate,
-            developer   = self.developer.get_edit_text(),
-            publisher   = self.publisher.get_edit_text(),
-            genre       = self.genre.get_edit_text(),
-            players     = self.players.get_edit_text(),
-            playcount   = self.playcount.get_edit_text(),
-            lastplayed  = self.lastplayed.get_edit_text(),
-            desc        = self.desc.get_edit_text(),
-            )
+        releasedate = data.get('releasedate')
+        data['releasedate'] = readableDateToEsString(releasedate)
+
         xmlManager.setDataForGame(self.currentGame, data)
 
     def addMissingGames(self):
@@ -941,13 +976,14 @@ class GameslistGUI(object):
 
         self.refreshGames()
         xmlpath = xmlManager.xmlpath
-        self.updateFooterText('updated: ' + xmlpath + ' with {} games'.format(len(games)))
+        text = 'Updated: {} with {} games'.format(xmlpath, len(games))
+        self.updateFooterText()
 
     def refreshGames(self):
 
         self.systemsWidgetCallback(None, self.currentSystem)
 
-    # - Widget helpers ---------------------------------------------------------
+    # - Widget helpers --------------------------------------------------------
 
     def updateFooterText(self, text):
 
@@ -963,14 +999,15 @@ class GameslistGUI(object):
             if callback:
                 urwid.connect_signal(button, 'click', callback, choice)
             button = urwid.AttrMap(button, None, focus_map='activeButton')
-            body.append( button )
+            body.append(button)
         return body
 
-    def field(self, var, label=None, defaultText=u'', multiline=False, callback=None):
+    def field(self, var, label=None, defaultText=u'',
+              multiline=False, callback=None):
 
         label = label or var
         label = label + u': '
-        labelWidget = urwid.Text((u'primaryBackground', label))
+        labelWidget = urwid.Text((u'bodyColor', label))
         editWidget = urwid.Edit(u'', defaultText, multiline=multiline)
         map = urwid.AttrMap(editWidget, u'bodyText', u'edittext')
         setattr(self, var, editWidget)
@@ -984,14 +1021,14 @@ class GameslistGUI(object):
             urwid.connect_signal(button, 'click', callback)
         return urwid.Padding(button, width=len(label)+1)
 
-    def lineBoxWrap(self, widget, title, padding=2, attrMap='primaryBackground'):
+    def lineBoxWrap(self, widget, title, padding=2, attrMap='bodyColor'):
 
         widget = urwid.Padding(widget, left=padding, right=padding)
         widget = urwid.LineBox(widget, title)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        widget = urwid.AttrMap(widget, 'bodyColor')
         return widget
 
-    # - Widgets ----------------------------------------------------------------
+    # - Widgets ---------------------------------------------------------------
 
     def menuWidget(self, title, choices=[], callback=None):
 
@@ -1005,29 +1042,29 @@ class GameslistGUI(object):
     def buttonsWidget(self):
 
         body = [
-            self.minimalButton('F1:Help',
-                partial(self.bottomButtonsCallback, 'f1')),
-            self.minimalButton('F2:+Sys',
-                partial(self.bottomButtonsCallback, 'f2')),
-            self.minimalButton('F3:+Game',
-                partial(self.bottomButtonsCallback, 'f3')),
-            self.minimalButton('F4:Save',
-                partial(self.bottomButtonsCallback, 'f4')),
-            self.minimalButton('F5:SFull',
-                partial(self.bottomButtonsCallback, 'f5')),
-            self.minimalButton('F6:SMiss',
-                partial(self.bottomButtonsCallback, 'f6')),
-            self.minimalButton('F7:View',
-                partial(self.bottomButtonsCallback, 'f7')),
-            self.minimalButton('F10:Quit',
-                partial(self.bottomButtonsCallback, 'f10')),
+            self.minimalButton(
+                'F1:Help', partial(self.bottomButtonsCallback, 'f1')),
+            self.minimalButton(
+                'F2:+Sys', partial(self.bottomButtonsCallback, 'f2')),
+            self.minimalButton(
+                'F3:+Game', partial(self.bottomButtonsCallback, 'f3')),
+            self.minimalButton(
+                'F4:Save', partial(self.bottomButtonsCallback, 'f4')),
+            self.minimalButton(
+                'F5:SFull', partial(self.bottomButtonsCallback, 'f5')),
+            self.minimalButton(
+                'F6:SMiss', partial(self.bottomButtonsCallback, 'f6')),
+            self.minimalButton(
+                'F7:View', partial(self.bottomButtonsCallback, 'f7')),
+            self.minimalButton(
+                'F10:Quit', partial(self.bottomButtonsCallback, 'f10')),
             ]
 
         gridFlow = urwid.GridFlow(body, 9, 2, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
-        widget = urwid.AttrMap(widget, 'primaryBackground')
+        widget = urwid.AttrMap(widget, 'bodyColor')
 
         return widget
 
@@ -1046,7 +1083,6 @@ class GameslistGUI(object):
             blank, self.field(u'path'),
             blank, self.field(u'name'),
             blank, self.field(u'image'),
-            #blank, self.field(u'thumbnail'),
             blank, self.field(u'rating'),
             blank, self.field(u'releasedate', u'releasedate(MM/DD/YYYY)'),
             blank, self.field(u'developer'),
@@ -1070,10 +1106,10 @@ class GameslistGUI(object):
         widget = self.menuWidget(
                 'Add System', choices=dirs,
                 callback=self.addSystemWidgetCallback)
-        # widget = urwid.AttrMap(widget, 'primaryBackground')
+        # widget = urwid.AttrMap(widget, 'bodyColor')
         return widget
 
-    # - pop-up stuffs ----------------------------------------------------------
+    # - pop-up stuffs ---------------------------------------------------------
 
     def openPopupWindow(self, widget=None, size=[50, 50], minimum=[10, 5]):
 
@@ -1107,20 +1143,21 @@ class GameslistGUI(object):
         else:
             self.closePopupWindow()
 
-    # - pop-ups ----------------------------------------------------------------
+    # - pop-ups ---------------------------------------------------------------
 
     def helpWindow(self):
 
         blank = urwid.Divider()
 
         description = (
-                'Gui for editing gamelist.xml files. This tool is intended ' +
-                'for making small changes rather than mass editing. \n' + 
-                'It does include a very simple scraper to pull down data and images ' + 
-                'for a single game at a time.\n' + 
-                ''+
-                '\nThe hotkeys listed below all work when not over an editable field. ' +
-                'Otherwise use any of the F-keys instead. ')
+            'This tool is for editing gamelist.xml files. It is primaraly '
+            'intended for making small changes and doesn\'t replace the need '
+            'for a proper scraper. This being said it does include a very '
+            'simple scraper to pull down data and images for a single game at '
+            'a time. \n'
+            'The fkeys listed below will work at any time. The alternate '
+            'hotkeys however, (for example pressing the "n" key), will only '
+            'work when not hovering over an editable field.')
 
         body = [
             blank,
@@ -1130,25 +1167,27 @@ class GameslistGUI(object):
             urwid.Text('Open help panel'),
             blank,
             urwid.AttrMap(urwid.Text('<F2>, <n>'), 'bodyText'),
-            urwid.Text(('Add new system, eg. create new gamelist.xml file under' + 
-                ' a chosen games folder')),
+            urwid.Text(('Add new system, eg. create new gamelist.xml file '
+                       'under a chosen games folder')),
             blank,
             urwid.AttrMap(urwid.Text('<F3>, <i>'), 'bodyText'),
-            urwid.Text('Add games from disc missing in xml for current gamelist.xml'),
+            urwid.Text('Add games from disc missing '
+                       'in xml for current gamelist.xml'),
             blank,
             urwid.AttrMap(urwid.Text('<F4>, <alt+s>, <u>'), 'bodyText'),
             urwid.Text('Save/Update current gamelist.xml'),
             blank,
             urwid.AttrMap(urwid.Text('<F5>, <s>'), 'bodyText'),
-            urwid.Text(('Scrape Full: Overwrite all fields with data ' + 
-                'found on gamesdb.net. Images will be downloaded if not in' + 
-                ' expected directory')),
+            urwid.Text(('Scrape Full: Overwrite all fields with data ' +
+                        'found on gamesdb.net. Images will be downloaded ' +
+                        'if not in expected directory')),
             blank,
             urwid.AttrMap(urwid.Text('<F6>, <m>'), 'bodyText'),
             urwid.Text('Scrape Missing: Scrape only empty fields.'),
             blank,
             urwid.AttrMap(urwid.Text('<F7>, <v>'), 'bodyText'),
-            urwid.Text('View current gamelist.xml (not an editor just a viewer)'),
+            urwid.Text('View current gamelist.xml '
+                       '(not an editor just a viewer)'),
             blank,
             urwid.AttrMap(urwid.Text('<F10>, <q>'), 'bodyText'),
             urwid.Text('Exit This Program'),
@@ -1245,7 +1284,7 @@ class GameslistGUI(object):
             strings.append(u'\nChange To -->\n')
 
             for prop in properties:
-                value = data.get(prop, u'') 
+                value = data.get(prop, u'')
                 strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
 
@@ -1261,17 +1300,17 @@ class GameslistGUI(object):
             strings.append(u'\nChange To -->\n')
 
             for prop in newProps:
-                value = data.get(prop, u'') 
+                value = data.get(prop, u'')
                 strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
 
         widgetTexts = [urwid.Text(t) for t in strings + ['\n']]
         pile = urwid.Pile(widgetTexts)
-        button_ok = urwid.Button('Ok', self.scrapeOkButtonAction, results)
-        button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
-        button_cancel = urwid.Button('Cancel', self.closePopupWindow)
-        button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
-        lw = urwid.SimpleFocusListWalker([pile, button_ok, button_cancel])
+        btn_ok = urwid.Button('Ok', self.scrapeOkButtonAction, results)
+        btn_ok = urwid.AttrMap(btn_ok, None, focus_map='activeButton')
+        btn_cancel = urwid.Button('Cancel', self.closePopupWindow)
+        btn_cancel = urwid.AttrMap(btn_cancel, None, focus_map='activeButton')
+        lw = urwid.SimpleFocusListWalker([pile, btn_ok, btn_cancel])
         fillerl = urwid.ListBox(lw)
         widget = self.lineBoxWrap(fillerl, 'Review Changes')
         self.togglePopupWindow(widget, 70)
@@ -1289,12 +1328,12 @@ class GameslistGUI(object):
 
         tw = urwid.Text(text)
 
-        button_ok = urwid.Button('Ok', self.saveGameXmlCallback, None)
-        button_ok = urwid.AttrMap(button_ok, None, focus_map='activeButton')
-        button_cancel = urwid.Button('Cancel', self.closePopupWindow)
-        button_cancel = urwid.AttrMap(button_cancel, None, focus_map='activeButton')
+        btn_ok = urwid.Button('Ok', self.saveGameXmlCallback, None)
+        btn_ok = urwid.AttrMap(btn_ok, None, focus_map='activeButton')
+        btn_cancel = urwid.Button('Cancel', self.closePopupWindow)
+        btn_cancel = urwid.AttrMap(btn_cancel, None, focus_map='activeButton')
 
-        lw = urwid.SimpleFocusListWalker([tw, button_ok, button_cancel])
+        lw = urwid.SimpleFocusListWalker([tw, btn_ok, btn_cancel])
         fillerl = urwid.ListBox(lw)
         widget = self.lineBoxWrap(fillerl, 'Save?')
         return widget
@@ -1316,8 +1355,14 @@ class GameslistGUI(object):
         header = urwid.Pile([msgtext, text, blank])
 
         dirs = ['..'] + dirs
-        bodyDirs = self.menuButtonList(dirs, callback=partial(self.browseDirCallback, root), buttonClass=dirButton)
-        bodyFiles = self.menuButtonList(files, callback=partial(self.browseFileCallback, root), buttonClass=fileButton)
+        bodyDirs = self.menuButtonList(
+                dirs,
+                callback=partial(self.browseDirCallback, root),
+                buttonClass=dirButton)
+        bodyFiles = self.menuButtonList(
+                files,
+                callback=partial(self.browseFileCallback, root),
+                buttonClass=fileButton)
         body = bodyDirs + [blank] + bodyFiles
 
         lw = urwid.SimpleFocusListWalker(body)
@@ -1328,7 +1373,7 @@ class GameslistGUI(object):
 
         return widget
 
-    # - callbacks --------------------------------------------------------------
+    # - callbacks -------------------------------------------------------------
 
     def keypress(self, key):
 
@@ -1350,7 +1395,6 @@ class GameslistGUI(object):
         # show key names
         # self.updateFooterText(str(key))
         # return
-
 
         if key == 'f1':
             popup = self.helpWindow()
@@ -1404,7 +1448,7 @@ class GameslistGUI(object):
 
         self.closePopupWindow()
         if subfolder == '..':
-            newdir =  os.path.abspath(os.path.join(folder, os.pardir))
+            newdir = os.path.abspath(os.path.join(folder, os.pardir))
         else:
             newdir = os.path.join(folder, subfolder)
         popup = self.browseForThumbnail(newdir)
@@ -1463,69 +1507,31 @@ class GameslistGUI(object):
         self.gameEditHolder.original_widget = self.blankWidget
 
         games = sorted(self.getOrMakeManager(choice).getGames())
-        self.gamesMenu.original_widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
+        widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
+        self.gamesMenu.original_widget = widget
         self.updateFooterText(getGamelist(choice))
 
-        self.path.set_edit_text(u'')
-        self.name.set_edit_text(u'')
-        self.image.set_edit_text(u'')
-        # self.thumbnail.set_edit_text('')
-        self.rating.set_edit_text(u'')
-        self.releasedate.set_edit_text(u'')
-        self.developer.set_edit_text(u'')
-        self.publisher.set_edit_text(u'')
-        self.genre.set_edit_text(u'')
-        self.players.set_edit_text(u'')
-        self.playcount.set_edit_text(u'')
-        self.lastplayed.set_edit_text(u'')
-        self.desc.set_edit_text(u'')
+        for tag in GAMELIST_TAGS:
+            getattr(self, tag).set_edit_text(u'')
 
     def gamesWidgetCallback(self, button, choice):
 
         self.updateGameXml()
-
         self.currentGame = choice
         self.updateFooterText(self.currentSystem + ', ' + choice)
-
         xmlManager = self.getOrMakeManager(self.currentSystem)
-
         self.gameEditHolder.original_widget = self.gameEditWidget
-
         data = xmlManager.getDataForGame(choice)
         if not data:
             self.refreshGames()
             self.updateFooterText('game list out of date')
             return
 
-        path        = data.get('path', u'')
-        name        = data.get('name', u'')
-        image       = data.get('image', u'')
-        # thumbnail   = data.get('thumbnail', '')
-        rating      = data.get('rating', u'')
-        releasedate = data.get('releasedate', u'')
-        developer   = data.get('developer', u'')
-        publisher   = data.get('publisher', u'')
-        genre       = data.get('genre', u'')
-        players     = data.get('players', u'')
-        playcount   = data.get('playcount', u'')
-        lastplayed  = data.get('lastplayed', u'')
-        desc        = data.get('desc', u'')
-
-        releasedate = esStringToReadableDate(releasedate)
-
-        self.path.set_edit_text(path)
-        self.name.set_edit_text(name)
-        self.image.set_edit_text(image)
-        # self.thumbnail.set_edit_text(thumbnail)
-        self.rating.set_edit_text(rating)
-        self.releasedate.set_edit_text(releasedate)
-        self.developer.set_edit_text(developer)
-        self.publisher.set_edit_text(publisher)
-        self.genre.set_edit_text(genre)
-        self.players.set_edit_text(players)
-        self.playcount.set_edit_text(playcount)
-        self.lastplayed.set_edit_text(lastplayed)
-        self.desc.set_edit_text(desc)
+        releasedate = data.get('releasedate')
+        data['releasedate'] = esStringToReadableDate(releasedate)
+        for tag in GAMELIST_TAGS:
+            widget = getattr(self, tag)
+            widget.set_edit_text(data.get(tag, u''))
 
     def addSystemWidgetCallback(self, button, choice):
 
@@ -1543,106 +1549,118 @@ class GameslistGUI(object):
 
         self.closePopupWindow()
 
-# - Alternate Colors -------------------------------------------------------
+
+# - Alternate Colors ----------------------------------------------------------
+
 
 class GreenTheme(GameslistGUI):
     def palette(self):
         # color palette
+        itm = self.paletteItm
         palette = [
-                # for button selections
-                self.paletteItm('activeButton', 'light green', bg='black', mode='standout'),
-                # for body text
-                self.paletteItm('bodyText', 'dark green', 'black', mode='bold'),
-                # color for text being actively edited
-                self.paletteItm('edittext', fg='light green', bg='black', mode='bold'),
-                # background color
-                self.paletteItm('primaryBackground', fg='dark green', bg='black'),
-                # for footer text
-                self.paletteItm('footerText', 'dark green', bg='black', mode='standout'),
-                # for drop shadow
-                self.paletteItm('dropShadow', bg='black'),
-                # for farmost background
-                self.paletteItm('deepBackground', fg='dark green', bg='black'),
-                ]
+            # for button selections
+            itm('activeButton', 'light green', bg='black', mode='standout'),
+            # for body text
+            itm('bodyText', 'dark green', 'black', mode='bold'),
+            # color for text being actively edited
+            itm('edittext', fg='light green', bg='black', mode='bold'),
+            # background color
+            itm('bodyColor', fg='dark green', bg='black'),
+            # for footer text
+            itm('footerText', 'dark green', bg='black', mode='standout'),
+            # for drop shadow
+            itm('dropShadow', bg='black'),
+            # for farmost background
+            itm('deepBackground', fg='dark green', bg='black'),
+            ]
         return palette
+
 
 class GrayTheme(GameslistGUI):
     def palette(self):
         # color palette
+        itm = self.paletteItm
         palette = [
-                # for button selections
-                self.paletteItm('activeButton', 'dark cyan', bg='black', mode='standout'),
-                # for body text
-                self.paletteItm('bodyText', 'black', bg='light gray', mode='bold'),
-                # color for text being actively edited
-                self.paletteItm('edittext', fg='black', bg='light gray', mode='bold'),
-                # background color
-                self.paletteItm('primaryBackground', fg='black', bg='light gray'),
-                # for footer text
-                self.paletteItm('footerText', mode='standout'),
-                # for drop shadow
-                self.paletteItm('dropShadow', bg='black'),
-                # for farmost background
-                self.paletteItm('deepBackground', fg='black', bg='light blue'),
-                ]
+            # for button selections
+            itm('activeButton', 'dark cyan', bg='black', mode='standout'),
+            # for body text
+            itm('bodyText', 'black', bg='light gray', mode='bold'),
+            # color for text being actively edited
+            itm('edittext', fg='black', bg='light gray', mode='bold'),
+            # background color
+            itm('bodyColor', fg='black', bg='light gray'),
+            # for footer text
+            itm('footerText', mode='standout'),
+            # for drop shadow
+            itm('dropShadow', bg='black'),
+            # for farmost background
+            itm('deepBackground', fg='black', bg='light blue'),
+            ]
         return palette
+
 
 class DarkTheme(GameslistGUI):
     def palette(self):
         # color palette
+        itm = self.paletteItm
         palette = [
-                # for button selections
-                self.paletteItm('activeButton', 'light blue', bg='black', mode='standout'),
-                # for body text
-                self.paletteItm('bodyText', 'light green', bg='black', mode='bold'),
-                # color for text being actively edited
-                self.paletteItm('edittext', fg='white', bg='black', mode='bold'),
-                # background color
-                self.paletteItm('primaryBackground', fg='light cyan', bg='black'),
-                # for footer text
-                self.paletteItm('footerText', fg='light blue', bg='black', mode='standout'),
-                # for drop shadow
-                self.paletteItm('dropShadow', bg='black'),
-                # for farmost background
-                self.paletteItm('deepBackground', fg='black', bg='dark gray', mode='bold'),
-                ]
+            # for button selections
+            itm('activeButton', 'light blue', bg='black', mode='standout'),
+            # for body text
+            itm('bodyText', 'light green', bg='black', mode='bold'),
+            # color for text being actively edited
+            itm('edittext', fg='white', bg='black', mode='bold'),
+            # background color
+            itm('bodyColor', fg='light cyan', bg='black'),
+            # for footer text
+            itm('footerText', fg='light blue', bg='black', mode='standout'),
+            # for drop shadow
+            itm('dropShadow', bg='black'),
+            # for farmost background
+            itm('deepBackground', fg='black', bg='dark gray', mode='bold'),
+            ]
 
         return palette
+
 
 class BWTheme(GameslistGUI):
     def palette(self):
         # color palette
+        itm = self.paletteItm
         palette = [
-                # for button selections
-                self.paletteItm('activeButton', 'white', bg='black', mode='standout'),
-                # for body text
-                self.paletteItm('bodyText', 'white', bg='black', mode='bold'),
-                # color for text being actively edited
-                self.paletteItm('edittext', fg='white', bg='black', mode='bold'),
-                # background color
-                self.paletteItm('primaryBackground', fg='white', bg='black'),
-                # for footer text
-                self.paletteItm('footerText', fg='white', bg='black', mode='standout'),
-                # for drop shadow
-                self.paletteItm('dropShadow', bg='black'),
-                # for farmost background
-                self.paletteItm('deepBackground', fg='white', bg='black'),
-                ]
+            # for button selections
+            itm('activeButton', 'white', bg='black', mode='standout'),
+            # for body text
+            itm('bodyText', 'white', bg='black', mode='bold'),
+            # color for text being actively edited
+            itm('edittext', fg='white', bg='black', mode='bold'),
+            # background color
+            itm('bodyColor', fg='white', bg='black'),
+            # for footer text
+            itm('footerText', fg='white', bg='black', mode='standout'),
+            # for drop shadow
+            itm('dropShadow', bg='black'),
+            # for farmost background
+            itm('deepBackground', fg='white', bg='black'),
+            ]
         return palette
 
-# - Launcher ---------------------------------------------------------------
+
+# - Launcher ------------------------------------------------------------------
+
 
 def parseArgs():
 
     desc = 'Tool to edit gamelist.xml files'
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('--colorsceme', '-c',
-                    help='green, gray, or dark')
+                        help='green, gray, or dark')
     parser.add_argument('--test', '-t', action='store_true',
-                    help='run the debug crap')
+                        help='run the debug crap')
 
     args = parser.parse_args()
     return args
+
 
 if __name__ == '__main__':
 
