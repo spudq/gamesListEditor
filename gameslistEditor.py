@@ -2,13 +2,14 @@
 
 '''
 TODO:
-    add ability to edit in external editor
+    close dialog
     renaming rom name changes position in listbox
-    clean up all footer messages
+    clean up all footer messages, add some consistancy
     need better job keeping track of changes
     would be nice to see which things have changed
-    save all xmls option
+    save all XMLs option
     make messages more interactive (better feedback) (unified gui style)
+    drop shadow on panel
 '''
 
 # - Imports -------------------------------------------------------------------
@@ -17,10 +18,11 @@ import os
 import re
 import errno
 import shutil
+import codecs
 import urllib
 import urllib2
-import codecs
 import difflib
+import tempfile
 import argparse
 import subprocess
 
@@ -47,6 +49,8 @@ IMAGE_DIR_XML = os.path.join('.', 'downloaded_images')
 SCRAPER_IMG_MAX_WIDTH = 400
 SCRAPER_IMG_SUFFIX = '-image'
 SCRAPER_USE_EXISTING_IMAGES = True
+
+EXTERNAL_EDITOR = 'vim'
 
 # - Constants -----------------------------------------------------------------
 
@@ -1064,12 +1068,14 @@ class GameslistGUI(object):
             self.minimalButton(
                 'F6:SMiss', partial(self.bottomButtonsCallback, 'f6')),
             self.minimalButton(
-                'F7:View', partial(self.bottomButtonsCallback, 'f7')),
+                'F7:Edit', partial(self.bottomButtonsCallback, 'f7')),
+            self.minimalButton(
+                'F8:Desc', partial(self.bottomButtonsCallback, 'f8')),
             self.minimalButton(
                 'F10:Quit', partial(self.bottomButtonsCallback, 'f10')),
             ]
 
-        gridFlow = urwid.GridFlow(body, 9, 2, 0, 'left')
+        gridFlow = urwid.GridFlow(body, 8, 2, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
@@ -1198,8 +1204,10 @@ class GameslistGUI(object):
             urwid.Text('Scrape Missing: Scrape only empty fields.'),
             blank,
             urwid.AttrMap(urwid.Text('<F7>, <v>'), 'bodyText'),
-            urwid.Text('View current gamelist.xml '
-                       '(not an editor just a viewer)'),
+            urwid.Text('Edit gamelist.xml in {}'.format(EXTERNAL_EDITOR)),
+            blank,
+            urwid.AttrMap(urwid.Text('<F8>'), 'bodyText'),
+            urwid.Text('Edit the desc field in {}'.format(EXTERNAL_EDITOR)),
             blank,
             urwid.AttrMap(urwid.Text('<F10>, <q>'), 'bodyText'),
             urwid.Text('Exit This Program'),
@@ -1209,6 +1217,10 @@ class GameslistGUI(object):
             blank,
             urwid.AttrMap(urwid.Text('<d>'), 'bodyText'),
             urwid.Text('Scrape Date: Scrape only game release date.'),
+            blank,
+            urwid.AttrMap(urwid.Text('<v>'), 'bodyText'),
+            urwid.Text('View current gamelist.xml '
+                       '(not an editor just a viewer)'),
             blank,
             urwid.AttrMap(urwid.Text('<esc>'), 'bodyText'),
             urwid.Text('Cancel Popup'),
@@ -1230,8 +1242,42 @@ class GameslistGUI(object):
         else:
             return self.emptyBoxWidget('No System Chosen', '')
 
-    def editXml(self):
-        pass
+    def editXMLExternal(self, *args):
+
+        gm = self.getOrMakeManager(self.currentSystem)
+        path = gm.xmlpath
+
+        self.updateFooterText(u'editing...')
+        self.loop.screen.stop()
+        subprocess.call([EXTERNAL_EDITOR + ' ' + path], shell=True)
+        self.loop.screen.start()
+
+        manager = ManageGameListXML(self.currentSystem)
+        self.xmlManagers[self.currentSystem] = manager
+
+        self.updateFooterText(u'done...')
+
+    def editDescriptionExternal(self, *args):
+
+        self.updateFooterText('ran')
+        if self.currentSystem and self.currentGame:
+
+            desc = self.desc.get_edit_text()
+            with tempfile.NamedTemporaryFile(delete=False) as f:
+                path = f.name
+                f.write(desc)
+            self.updateFooterText(u'editing desc...')
+            self.loop.screen.stop()
+            subprocess.call([EXTERNAL_EDITOR + ' ' + path], shell=True)
+            self.loop.screen.start()
+            with open(path, 'r') as f:
+                desc = f.read()
+            self.desc.set_edit_text(desc)
+            os.remove(path)
+            self.updateFooterText('imported desc from ' + EXTERNAL_EDITOR)
+        else:
+
+            self.updateFooterText('game not chosen')
 
     def scraperChoices(self):
 
@@ -1433,12 +1479,18 @@ class GameslistGUI(object):
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
-        if key in ('f7', 'v'):
-            popup = self.viewXml()
-            self.togglePopupWindow(popup, 90)
+        if key == 'f7':
+            self.editXMLExternal()
+
+        if key == 'f8':
+            self.editDescriptionExternal()
 
         if key in ('f10', 'q', 'Q'):
             self.quit()
+
+        if key == 'v':
+            popup = self.viewXml()
+            self.togglePopupWindow(popup, 90)
 
         if key == 'b':
             popup = self.browseForThumbnail(ROMS_DIR)
