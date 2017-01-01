@@ -2,6 +2,7 @@
 
 '''
 TODO:
+    this is striping important stuff in my desc boo :(
     close dialog
     renaming rom name changes position in listbox
     clean up all footer messages, add some consistancy
@@ -705,11 +706,15 @@ class ManageGameListXML(object):
         self.changes = True
 
     def toxml(self):
-
+        ''' this is striping important stuff in my desc boo :(
+        '''
         newXML = self.dom.toxml()
         reparsed = parseString(u'{0}'.format(newXML).encode('utf-8'))
         xmlLines = reparsed.toprettyxml(indent=u'    '*2).split(u'\n')
-        return u'\n'.join([line for line in xmlLines if line.strip()])
+
+        # this is not a fix !!! this needs to be fixed
+        # if a line needs a break and contains a space it will be stripped
+        return u'\n'.join([line for line in xmlLines if line.strip() or not line])
 
     def writeXML(self):
 
@@ -740,6 +745,12 @@ class ManageGameListXML(object):
 
 
 def test():
+
+    system = 'atari2600'
+    m = ManageGameListXML(system)
+    print m.toxml()
+
+    return
 
     system = 'nes'
 
