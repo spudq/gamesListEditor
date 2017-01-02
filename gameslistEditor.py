@@ -6,7 +6,7 @@ TODO:
     close dialog
     renaming rom name changes position in listbox
     clean up all footer messages, add some consistancy
-    need better job keeping track of changes
+    ! need better job keeping track of changes
     would be nice to see which things have changed
     save all XMLs option
     make messages more interactive (better feedback) (unified gui style)
@@ -597,7 +597,6 @@ class Scraper(object):
 
 # - XML Manager ---------------------------------------------------------------
 
-
 def newGamesList(system):
 
     xmlpath = getGamelist(system)
@@ -612,6 +611,22 @@ def newGamesList(system):
         dom.writexml(f, indent=' ', addindent=' ', newl='\n', encoding='utf-8')
 
     return xmlpath
+
+
+def elementTreeIndent(elem, level=0):
+    i = "\n" + level*"  "
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + "  "
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+        for elem in elem:
+            elementTreeIndent(elem, level+1)
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = i
 
 
 class ManageGameListXML(object):
@@ -706,15 +721,16 @@ class ManageGameListXML(object):
         self.changes = True
 
     def toxml(self):
-        ''' this is striping important stuff in my desc boo :(
-        '''
-        newXML = self.dom.toxml()
-        reparsed = parseString(u'{0}'.format(newXML).encode('utf-8'))
-        xmlLines = reparsed.toprettyxml(indent=u'    '*2).split(u'\n')
 
-        # this is not a fix !!! this needs to be fixed
-        # if a line needs a break and contains a space it will be stripped
-        return u'\n'.join([line for line in xmlLines if line.strip() or not line])
+        ''' cleanup xml indents
+        for the life of me I can't get simple dom to indent correctly
+        so I've used element tree instead.
+        '''
+
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(self.dom.toprettyxml())
+        elementTreeIndent(root)
+        return ET.tostring(root, encoding='utf-8')
 
     def writeXML(self):
 
@@ -805,6 +821,7 @@ class GameslistGUI(object):
         self.currentGame = None
         self.systems = list(getSystems())
         self.xmlManagers = dict()
+        self.feildsEdited = False
 
         self.panelOpen = False
 
@@ -955,6 +972,9 @@ class GameslistGUI(object):
 
     def updateGameXml(self):
 
+        if not self.feildsEdited:
+            self.updateFooterText('no feilds edited')
+            return
         if not self.currentSystem:
             self.updateFooterText('no system data to update')
             return
@@ -1027,6 +1047,7 @@ class GameslistGUI(object):
         label = label + u': '
         labelWidget = urwid.Text((u'bodyColor', label))
         editWidget = urwid.Edit(u'', defaultText, multiline=multiline)
+        urwid.connect_signal(editWidget, 'change', callback) if callback else 0
         map = urwid.AttrMap(editWidget, u'bodyText', u'edittext')
         setattr(self, var, editWidget)
 
@@ -1101,26 +1122,37 @@ class GameslistGUI(object):
         box = urwid.ListBox(lw)
         return self.lineBoxWrap(box, title)
 
+    def editCallback(self, widget, string, *args):
+
+        self.feildsEdited = True
+
     def mainEditWidget(self):
 
         blank = urwid.Divider()
 
         body = [
-            blank, self.field(u'path'),
-            blank, self.field(u'name'),
-            blank, self.field(u'image',
-                       button='browse',
-                       buttonCallback=partial(self.bottomButtonsCallback, 'b')
-                       ),
-            blank, self.field(u'rating'),
-            blank, self.field(u'releasedate', u'releasedate(MM/DD/YYYY)'),
-            blank, self.field(u'developer'),
-            blank, self.field(u'publisher'),
-            blank, self.field(u'genre'),
-            blank, self.field(u'players'),
-            blank, self.field(u'playcount'),
-            blank, self.field(u'lastplayed'),
-            blank, self.field(u'desc', multiline=True),
+            blank, self.field(u'path', callback=self.editCallback),
+            blank, self.field(u'name', callback=self.editCallback),
+            blank, self.field(
+                u'image', button='browse',
+                buttonCallback=partial(self.bottomButtonsCallback, 'b'),
+                callback=self.editCallback
+                ),
+            blank, self.field(u'rating', callback=self.editCallback),
+            blank, self.field(
+                u'releasedate',
+                u'releasedate(MM/DD/YYYY)',
+                callback=self.editCallback),
+            blank, self.field(u'developer', callback=self.editCallback),
+            blank, self.field(u'publisher', callback=self.editCallback),
+            blank, self.field(u'genre', callback=self.editCallback),
+            blank, self.field(u'players', callback=self.editCallback),
+            blank, self.field(u'playcount', callback=self.editCallback),
+            blank, self.field(u'lastplayed', callback=self.editCallback),
+            blank, self.field(
+                u'desc',
+                callback=self.editCallback,
+                multiline=True),
             ]
 
         lw = urwid.SimpleFocusListWalker(body)
@@ -1276,13 +1308,15 @@ class GameslistGUI(object):
             desc = self.desc.get_edit_text()
             with tempfile.NamedTemporaryFile(delete=False) as f:
                 path = f.name
+                # f.write(desc)
+                f = codecs.lookup('utf-8')[3](f)
                 f.write(desc)
             self.updateFooterText(u'editing desc...')
             self.loop.screen.stop()
             subprocess.call([EXTERNAL_EDITOR + ' ' + path], shell=True)
             self.loop.screen.start()
             with open(path, 'r') as f:
-                desc = f.read()
+                desc = f.read().decode('utf8')
             self.desc.set_edit_text(desc)
             os.remove(path)
             self.updateFooterText('imported desc from ' + EXTERNAL_EDITOR)
@@ -1389,8 +1423,13 @@ class GameslistGUI(object):
         if not self.currentSystem:
             return self.emptyBoxWidget('no system chosen', '')
 
-        gm = self.getOrMakeManager(self.currentSystem)
-        path = gm.xmlpath
+        xmlManager = self.getOrMakeManager(self.currentSystem)
+
+        if not xmlManager.changes:
+            self.updateFooterText('no changes to save')
+            return self.emptyBoxWidget('no changes to save', '')
+
+        path = xmlManager.xmlpath
 
         text = 'Save Changes to...\n'
         text += path + '?\n'
@@ -1512,9 +1551,19 @@ class GameslistGUI(object):
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
+        if key == 'c':
+            self.checkForChanges()
+
         if key == 'esc':
             if self.panelOpen:
                 self.closePopupWindow()
+
+    def checkForChanges(self):
+
+        output = dict()
+        for system, manager in self.xmlManagers.items():
+            output.setdefault(system, []).append(manager.changes)
+        self.updateFooterText(str(output))
 
     def bottomButtonsCallback(self, *args):
         self.keypress(args[0])
@@ -1586,8 +1635,10 @@ class GameslistGUI(object):
         self.gamesMenu.original_widget = widget
         self.updateFooterText(getGamelist(choice))
 
+        edited = self.feildsEdited  # mute callback
         for tag in GAMELIST_TAGS:
             getattr(self, tag).set_edit_text(u'')
+        self.feildsEdited = edited
 
     def gamesWidgetCallback(self, button, choice):
 
@@ -1602,11 +1653,14 @@ class GameslistGUI(object):
             self.updateFooterText('game list out of date')
             return
 
+        edited = self.feildsEdited  # mute callback
         releasedate = data.get('releasedate')
         data['releasedate'] = esStringToReadableDate(releasedate)
         for tag in GAMELIST_TAGS:
             widget = getattr(self, tag)
             widget.set_edit_text(data.get(tag, u''))
+
+        self.feildsEdited = edited
 
     def addSystemWidgetCallback(self, button, choice):
 
