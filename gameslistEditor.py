@@ -2,7 +2,6 @@
 
 '''
 TODO:
-    this is striping important stuff in my desc boo :(
     close dialog
     renaming rom name changes position in listbox
     clean up all footer messages, add some consistancy
@@ -40,8 +39,8 @@ from functools import partial
 # - User Settings -------------------------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
-ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
-ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
+# ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
+# ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
 
 IMAGE_DIR = os.path.join(ROMS_DIR, '{system}', 'downloaded_images')
 IMAGE_DIR_FULL = os.path.join(ROMS_DIR, '{system}', 'downloaded_images_large')
@@ -726,16 +725,21 @@ class ManageGameListXML(object):
         for the life of me I can't get simple dom to indent correctly
         so I've used element tree instead.
         '''
-
         import xml.etree.ElementTree as ET
-        root = ET.fromstring(self.dom.toprettyxml())
+        xmlstring = self.dom.toxml('utf-8')
+        root = ET.fromstring(xmlstring, parser=ET.XMLParser(encoding='utf-8'))
         elementTreeIndent(root)
-        return ET.tostring(root, encoding='utf-8')
+        string = ET.tostring(root, encoding='UTF-8')
+        string = u'{}'.format(string.decode('utf-8'))
+        return string
 
-    def writeXML(self):
+    def writeXML(self, path=None):
 
-        backupFile(self.xmlpath)
-        xmlOutPath = self.xmlpath
+        if not path or path == self.xmlpath:
+            backupFile(self.xmlpath)
+            xmlOutPath = self.xmlpath
+        else:
+            xmlOutPath = path
 
         with open(xmlOutPath, 'w') as f:
             doc = self.toxml()
@@ -762,9 +766,20 @@ class ManageGameListXML(object):
 
 def test():
 
-    system = 'atari2600'
+    system = 'snes'
     m = ManageGameListXML(system)
-    print m.toxml()
+    # m.toxml()
+    # return
+    game = [i for i in list(m.getGames()) if 'mon' in i.lower()][0]
+
+    s = Scraper(system, simplifySearchString(game))
+    s.gameSearch()
+
+    sg = s.getGames()[0]
+    info = s.getGameInfo(sg)
+
+    m.setDataForGame(game, info)
+    m.writeXML('//RetroPie/roms/text.xml')
 
     return
 
