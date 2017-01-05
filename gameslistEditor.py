@@ -39,7 +39,6 @@ from functools import partial
 # - User Settings -------------------------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
-# ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/RetroPie/roms'
 # ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
 
 IMAGE_DIR = os.path.join(ROMS_DIR, '{system}', 'downloaded_images')
@@ -48,9 +47,16 @@ IMAGE_DIR_XML = os.path.join('.', 'downloaded_images')
 
 SCRAPER_IMG_MAX_WIDTH = 400
 SCRAPER_IMG_SUFFIX = '-image'
-SCRAPER_USE_EXISTING_IMAGES = True
+SCRAPER_USE_EXISTING_IMAGES = False
 
 EXTERNAL_EDITOR = 'vim'
+
+ARCADE_DAT_FILE = {
+        'mame-mame4all': None,
+        'mame-advmame': None,
+        'mame-libretro': r'\\retropie\roms\mame-libretro\MAME 078.dat',
+        'arcade':None,
+        }
 
 # - Constants -----------------------------------------------------------------
 
@@ -162,6 +168,8 @@ GAMESDB_SYSTEMS = {
         'nds': 'Nintendo DS',
         'nes': 'Nintendo Entertainment System (NES)',
         'mame-mame4all': 'Arcade',
+        'mame-libretro': 'Arcade',
+        'mame-advmame': 'Arcade',
         'gb': 'Nintendo Game Boy',
         'gba': 'Nintendo Game Boy Advance',
         'gbc': 'Nintendo Game Boy Color',
@@ -613,6 +621,8 @@ def newGamesList(system):
 
 
 def elementTreeIndent(elem, level=0):
+    '''
+    '''
     i = "\n" + level*"  "
     if len(elem):
         if not elem.text or not elem.text.strip():
@@ -760,11 +770,39 @@ class ManageGameListXML(object):
         self.setData(gameNode, 'path', './' + fileName)
         self.setData(gameNode, 'name', gameName)
 
+    def setGameTitlesFromDat(self):
+
+        # get game names from .dat file
+        datPath = ARCADE_DAT_FILE.get(self.system)
+        if not datPath:
+            return
+        datData = dict()
+        for gameTag in parse(datPath).getElementsByTagName('game'):
+            if gameTag.hasAttribute('name'):
+                name = gameTag.getAttribute('name')
+                subTag = gameTag.getElementsByTagName('description')
+                if not subTag:
+                    continue
+                datData.setdefault(name, {})
+                datData[name]['gameName'] = subTag[0].firstChild.data
+
+        for gamePath, oldName in zip(self.getGames(False), self.getGames(True)):
+            p, baseName, ext = pathSplit(gamePath)
+            newName = datData.get(baseName, {}).get('gameName', oldName)
+            self.setDataForGame(oldName, dict(name=newName))
 
 # - Temp Function -------------------------------------------------------------
 
 
 def test():
+
+    system = 'mame-libretro'
+    m = ManageGameListXML(system)
+    m.setGameTitlesFromDat()
+    print m.toxml()
+
+
+    return
 
     system = 'snes'
     m = ManageGameListXML(system)
@@ -1280,6 +1318,9 @@ class GameslistGUI(object):
             urwid.Text('View current gamelist.xml '
                        '(not an editor just a viewer)'),
             blank,
+            urwid.AttrMap(urwid.Text('<alt+t>'), 'bodyText'),
+            urwid.Text('Load Titles From .dat file (used for arcade systems)'),
+            blank,
             urwid.AttrMap(urwid.Text('<esc>'), 'bodyText'),
             urwid.Text('Cancel Popup'),
             ]
@@ -1573,6 +1614,9 @@ class GameslistGUI(object):
             if self.panelOpen:
                 self.closePopupWindow()
 
+        if key == 'meta t':
+            self.addSystemNamesFromDat()
+
     def checkForChanges(self):
 
         output = dict()
@@ -1693,6 +1737,17 @@ class GameslistGUI(object):
 
         self.closePopupWindow()
 
+    def addSystemNamesFromDat(self, *args):
+
+        datPath = ARCADE_DAT_FILE.get(self.currentSystem)
+        if self.currentSystem and datPath:
+            xmlManager = self.getOrMakeManager(self.currentSystem)
+            xmlManager.setGameTitlesFromDat()
+            self.systemsWidgetCallback('', self.currentSystem)
+            self.updateFooterText('titles updated')
+        else:
+            txt = 'no .dat file for {}'.format(self.currentSystem)
+            self.updateFooterText(txt)
 
 # - Alternate Colors ----------------------------------------------------------
 
