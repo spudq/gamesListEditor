@@ -3,9 +3,8 @@
 '''
 TODO:
     close dialog
-    renaming rom name changes position in listbox
     clean up all footer messages, add some consistancy
-    ! need better job keeping track of changes
+    need better job keeping track of changes
     would be nice to see which things have changed
     save all XMLs option
     make messages more interactive (better feedback) (unified gui style)
@@ -1177,17 +1176,13 @@ class GameslistGUI(object):
         box = urwid.ListBox(lw)
         return self.lineBoxWrap(box, title)
 
-    def editCallback(self, widget, string, *args):
-
-        self.feildsEdited = True
-
     def mainEditWidget(self):
 
         blank = urwid.Divider()
 
         body = [
             blank, self.field(u'path', callback=self.editCallback),
-            blank, self.field(u'name', callback=self.editCallback),
+            blank, self.field(u'name', callback=self.nameEditCallback),
             blank, self.field(
                 u'image', button='browse',
                 buttonCallback=partial(self.bottomButtonsCallback, 'b'),
@@ -1346,6 +1341,10 @@ class GameslistGUI(object):
     def editXMLExternal(self, *args):
 
         gm = self.getOrMakeManager(self.currentSystem)
+        if gm.changes:
+            self.updateFooterText('Changes, would be lost')
+            return
+
         path = gm.xmlpath
 
         self.updateFooterText(u'editing...')
@@ -1412,6 +1411,11 @@ class GameslistGUI(object):
 
         self.closePopupWindow()
 
+        pathText = self.path.get_edit_text()
+        nameText = self.name.get_edit_text()
+        pathName = pathSplit(pathText)[1]
+        defaultName = pathName == nameText
+
         # attempt to get country code from rom name (on disc)
         rom = self.path.get_edit_text()
         founds = re.findall(r'\(.*?\)', rom)
@@ -1456,7 +1460,7 @@ class GameslistGUI(object):
             newProps = list()
             for prop in properties:
                 value = getattr(self, prop).get_edit_text()
-                if not value or value == '01/01/0001':
+                if not value or value == '01/01/0001' or defaultName:
                     newProps.append(prop)
                     strings.append(u'{}: {}'.format(prop, value))
 
@@ -1692,8 +1696,10 @@ class GameslistGUI(object):
         self.currentGame = None
 
         self.gameEditHolder.original_widget = self.blankWidget
-
-        games = sorted(self.getOrMakeManager(choice).getGames())
+        games = sorted(
+            self.getOrMakeManager(choice).getGames(),
+            key=lambda s: s.lower()
+                )
         widget = self.menuWidget('Games ({})'.format(self.currentSystem), games, self.gamesWidgetCallback)
         self.gamesMenu.original_widget = widget
         self.updateFooterText(getGamelist(choice))
@@ -1705,13 +1711,19 @@ class GameslistGUI(object):
 
     def gamesWidgetCallback(self, button, choice):
 
+        self.currentGameInfoButton = button
+
         self.updateGameXml()
         self.currentGame = choice
         self.updateFooterText(self.currentSystem + ', ' + choice)
         xmlManager = self.getOrMakeManager(self.currentSystem)
         self.gameEditHolder.original_widget = self.gameEditWidget
         data = xmlManager.getDataForGame(choice)
-        if not data:
+        if not data:  # get the current button text, try that
+            choice = button.get_label()
+            data = xmlManager.getDataForGame(choice)
+
+        if not data:  # if still no data, refresh the whole widget
             self.refreshGames()
             self.updateFooterText('game list out of date')
             return
@@ -1752,6 +1764,16 @@ class GameslistGUI(object):
         else:
             txt = 'no .dat file for {}'.format(self.currentSystem)
             self.updateFooterText(txt)
+
+    def editCallback(self, widget, string, *args):
+
+        self.feildsEdited = True
+
+    def nameEditCallback(self, widget, string, *args):
+
+        self.feildsEdited = True
+        if self.currentGame:
+            self.currentGameInfoButton.set_label(string)
 
 
 # - Alternate Colors ----------------------------------------------------------
