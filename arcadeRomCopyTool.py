@@ -2,26 +2,12 @@
 
 # - Imports -------------------------------------------------------------------
 import os
-import re
-import errno
 import shutil
-import codecs
-import urllib
-import urllib2
-import difflib
-import tempfile
-import argparse
-import subprocess
-
-from collections import OrderedDict
-from operator import itemgetter
-
-from xml.dom.minidom import parse, parseString, Document
-
 import urwid
 
 from pprint import pprint
-from functools import partial
+
+from xml.dom.minidom import parse, parseString, Document
 
 # - User Settings -------------------------------------------------------------
 
@@ -29,46 +15,7 @@ ROMS_TARGET_DIR = '//retropie/roms/mame-libretro'
 ROMS_SOURCE_DIR = '/cygdrive/d/Games/Emulation/romSets/mame/MAME2003_Reference_Set_MAME0.78_ROMs_CHDs_Samples/roms'
 DAT_FILE = r'\\retropie\roms\mame-libretro\MAME 078.dat'
 
-def mkdir_p(path):
-    '''make a directory
-    from...
-    http://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
-
-    has good explanation on why this is better than
-    if not os.path.exists(path):
-        os.makedirs(path)
-    '''
-    try:
-        os.makedirs(path)
-    except OSError as exc:  # Python >2.5
-        if exc.errno == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
-
-
-def backupFile(path):
-
-    sp = os.path.abspath(path)
-    fp, fn = os.path.split(sp)
-    backupdir = os.path.join(fp, '.backup')
-    mkdir_p(backupdir)
-
-    matcher = fn + '.backup.\d+'
-    backups = [f for f in os.listdir(backupdir) if re.match(matcher, f)]
-    versons = []
-    for b in backups:
-        try:
-            versons.append(int(b.split('.').pop()))
-        except:
-            pass
-
-    maxVersion = max(versons) if versons else 0
-    version = maxVersion + 1
-
-    tp = os.path.join(backupdir, fn + '.backup.' + str(version))
-    shutil.copyfile(sp, tp)
-
+# - Stuffs --------------------------------------------------------------------
 
 def pathSplit(path):
 
@@ -76,43 +23,48 @@ def pathSplit(path):
     bn, ext = os.path.splitext(fn)
     return fp, bn, ext
 
-
-# - XML Manager ---------------------------------------------------------------
-
 def gameTitlesFromDat():
 
-        # get game names from .dat file
-        datData = dict()
-        for gameTag in parse(DAT_FILE).getElementsByTagName('game'):
-            if gameTag.hasAttribute('name'):
-                name = gameTag.getAttribute('name')
-                subTag = gameTag.getElementsByTagName('description')
-                if not subTag:
-                    continue
-                datData.setdefault(name, {})
-                datData[name]['gameName'] = subTag[0].firstChild.data
+    print 'Parsing:', DAT_FILE
 
-        return datData
+    # get game names from .dat file
+    datData = dict()
+    for gameTag in parse(DAT_FILE).getElementsByTagName('game'):
+        if gameTag.hasAttribute('name'):
+            name = gameTag.getAttribute('name')
+            subTag = gameTag.getElementsByTagName('description')
+            if not subTag:
+                continue
+            datData.setdefault(name, {})
+            datData[name]['gameName'] = subTag[0].firstChild.data
 
-# - URWID Below ---------------------------------------------------------------
-
+    return datData
 
 class CopyGamesGui(object):
 
     def __init__(self):
 
-        join = os.path.join
         self.gameData = gameTitlesFromDat() 
 
         sourceRoms = self.getGames(ROMS_SOURCE_DIR)
         targetRoms = self.getGames(ROMS_TARGET_DIR)
 
-        romList = [(i, i in targetRoms) for i in sourceRoms]
+        self.romList = [(i, i in targetRoms) for i in sourceRoms]
 
-        self.chooserWidget = self.menuWidget('Source Roms', romList)
+        self.createCheckboxes(self.romList)
+
+        self.chooserWidget = self.menuWidget('Source Roms', self.romList)
+
+        self.body = urwid.WidgetPlaceholder(self.chooserWidget)
+
+        self.filterWidget = urwid.Edit(u'', u'', multiline=False)
+        urwid.connect_signal(self.filterWidget, 'change', self.filterButtonAction)
+
+        editWidget = urwid.Filler(self.filterWidget)
 
         pwidget = urwid.Pile([
-                    self.chooserWidget,
+                    (1, editWidget),
+                    self.body,
                     (2, self.buttonsWidget()),
                     ])
 
@@ -123,28 +75,34 @@ class CopyGamesGui(object):
                 pwidget, header=None, footer=self.footer)
         self.frameWidget = self.main_shadow(self.frameWidget)
 
-        self.body = urwid.WidgetPlaceholder(self.frameWidget)
+        self.mainwidget = urwid.WidgetPlaceholder(self.frameWidget)
 
         # do it
         self.loop = urwid.MainLoop(
-                self.body,
+                self.mainwidget,
                 self.palette(),
                 unhandled_input=self.keypress
                 )
         self.loop.run()
 
+    def filterButtonAction(self, button, *args):
+
+        roms = list()
+        for rom in self.romList:
+            text = self.filterWidget.get_edit_text()
+            if text.lower() in self.getLabel(rom[0]).lower():
+                roms.append(rom)
+        self.chooserWidget = self.menuWidget('Source Roms', roms)
+        self.body.original_widget = self.chooserWidget
+
     def buttonsWidget(self):
 
-        body = [
-                urwid.Button('Do It', self.doIt),
-            ]
-
-        gridFlow = urwid.GridFlow(body, 8, 2, 0, 'left')
+        body = [urwid.Button('Do It', self.doIt)]
+        gridFlow = urwid.GridFlow(body, 10, 2, 0, 'left')
         lw = urwid.SimpleFocusListWalker([gridFlow])
         box = urwid.ListBox(lw)
         widget = urwid.Padding(box, left=2, right=2)
         widget = urwid.AttrMap(widget, 'bodyColor')
-
         return widget
 
     def doIt(self, *args):
@@ -152,7 +110,7 @@ class CopyGamesGui(object):
         targets = os.listdir(ROMS_TARGET_DIR)
 
         self.loop.screen.stop()
-        for checkbox in self.checkboxes:
+        for title, checkbox in self.checkboxes.items():
             filename = checkbox.filename
             checked = checkbox.state
             source = os.path.join(ROMS_SOURCE_DIR, filename)
@@ -169,7 +127,6 @@ class CopyGamesGui(object):
 
         raise urwid.ExitMainLoop()
 
-
     # - callbacks -------------------------------------------------------------
 
     def keypress(self, key):
@@ -179,16 +136,12 @@ class CopyGamesGui(object):
         else:
             self.updateFooterText(str(key))
 
-    def sourceRomsClicked(self, button, choice):
-
-        self.updateFooterText(choice)
-
     # - Widgets ---------------------------------------------------------------
 
     def getLabel(self, gameFile):
         path, fn, fext = pathSplit(gameFile)
         fileName = self.gameData.get(fn, {}).get('gameName', fn)
-        return fileName
+        return fileName + ', ' + fn
 
     def getGames(self, path):
 
@@ -281,22 +234,14 @@ class CopyGamesGui(object):
         text = urwid.AttrMap(text, 'footerText')
         self.footer.original_widget = text
 
-    def menuButtonList(self, choices, callback=None, buttonClass=urwid.Button):
+    def createCheckboxes(self, choices):
 
-        body = []
-        self.checkboxes = []
+        self.checkboxes = dict()
         for choice, state in choices:
             label = self.getLabel(choice)
             checkbox = urwid.CheckBox(label, state=state)
             checkbox.filename = choice
-            self.checkboxes.append(checkbox)
-
-            # button = buttonClass(label)
-            # if callback:
-                # urwid.connect_signal(button, 'click', callback, choice)
-            # button = urwid.AttrMap(button, None, focus_map='activeButton')
-            body.append(checkbox)
-        return body
+            self.checkboxes.setdefault(choice, checkbox)
 
     def lineBoxWrap(self, widget, title, padding=2, attrMap='bodyColor'):
 
@@ -309,23 +254,21 @@ class CopyGamesGui(object):
 
     def menuWidget(self, title, choices=[], callback=None):
 
-        body = self.menuButtonList(choices, callback)
+        # body = self.menuButtonList(choices, callback)
+
+        body = []
+        for choice, state in choices:
+            checkbox = self.checkboxes[choice]
+            body.append(checkbox)
+
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
-        widget = self.lineBoxWrap(box, title)
+        # widget = self.lineBoxWrap(box, title)
+        widget = urwid.Padding(box, left=2, right=2)
+        widget = urwid.LineBox(widget, title)
+        widget = urwid.AttrMap(widget, 'bodyColor')
 
         return widget
-
-    def emptyBoxWidget(self, title='Content Goes Here', text=''):
-
-        body = [urwid.Text(text)]
-        lw = urwid.SimpleFocusListWalker(body)
-        box = urwid.ListBox(lw)
-        return self.lineBoxWrap(box, title)
-
-
-# - Launcher ------------------------------------------------------------------
-
 
 if __name__ == '__main__':
 

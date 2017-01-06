@@ -47,7 +47,7 @@ IMAGE_DIR_XML = os.path.join('.', 'downloaded_images')
 
 SCRAPER_IMG_MAX_WIDTH = 400
 SCRAPER_IMG_SUFFIX = '-image'
-SCRAPER_USE_EXISTING_IMAGES = False
+SCRAPER_USE_EXISTING_IMAGES = True
 
 EXTERNAL_EDITOR = 'vim'
 
@@ -756,6 +756,8 @@ class ManageGameListXML(object):
             f = codecs.lookup('utf-8')[3](f)
             f.write(doc)
 
+        self.changes = False
+
     def addGame(self, fileName):
 
         gameRoot = self.dom.firstChild
@@ -1291,12 +1293,12 @@ class GameslistGUI(object):
             urwid.AttrMap(urwid.Text('<F4>, <alt+s>, <u>'), 'bodyText'),
             urwid.Text('Save/Update current gamelist.xml'),
             blank,
-            urwid.AttrMap(urwid.Text('<F5>, <s>'), 'bodyText'),
+            urwid.AttrMap(urwid.Text('<F5>, <shift + S>'), 'bodyText'),
             urwid.Text(('Scrape Full: Overwrite all fields with data ' +
                         'found on gamesdb.net. Images will be downloaded ' +
                         'if not in expected directory')),
             blank,
-            urwid.AttrMap(urwid.Text('<F6>, <m>'), 'bodyText'),
+            urwid.AttrMap(urwid.Text('<F6>, <s>'), 'bodyText'),
             urwid.Text('Scrape Missing: Scrape only empty fields.'),
             blank,
             urwid.AttrMap(urwid.Text('<F7>, <v>'), 'bodyText'),
@@ -1449,10 +1451,12 @@ class GameslistGUI(object):
 
         if self.scraperMode == 'missing':
 
+            # dates default to '01/01/0001' from EmulationStation when empty
+
             newProps = list()
             for prop in properties:
                 value = getattr(self, prop).get_edit_text()
-                if not value:
+                if not value or value == '01/01/0001':
                     newProps.append(prop)
                     strings.append(u'{}: {}'.format(prop, value))
 
@@ -1575,12 +1579,12 @@ class GameslistGUI(object):
             popup = self.saveWindow()
             self.togglePopupWindow(popup, 90, 15)
 
-        if key in ('f5', 's', 'S'):
+        if key in ('f5', 'S'):
             self.scraperMode = 'full'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
-        if key in ('f6', 'm', 'M'):
+        if key in ('f6', 's'):
             self.scraperMode = 'missing'
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
@@ -1690,7 +1694,7 @@ class GameslistGUI(object):
         self.gameEditHolder.original_widget = self.blankWidget
 
         games = sorted(self.getOrMakeManager(choice).getGames())
-        widget = self.menuWidget('Games', games, self.gamesWidgetCallback)
+        widget = self.menuWidget('Games ({})'.format(self.currentSystem), games, self.gamesWidgetCallback)
         self.gamesMenu.original_widget = widget
         self.updateFooterText(getGamelist(choice))
 
@@ -1748,6 +1752,7 @@ class GameslistGUI(object):
         else:
             txt = 'no .dat file for {}'.format(self.currentSystem)
             self.updateFooterText(txt)
+
 
 # - Alternate Colors ----------------------------------------------------------
 
