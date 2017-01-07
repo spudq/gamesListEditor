@@ -2,6 +2,7 @@
 
 '''
 TODO:
+    fix bug with duplicate names
     close dialog
     clean up all footer messages, add some consistancy
     need better job keeping track of changes
@@ -881,8 +882,9 @@ class GameslistGUI(object):
 
         # widget instances
         self.systemMenu = self.menuWidget('Game Systems', self.systems,
-                                          self.systemsWidgetCallback)
-        self.gamesMenu = self.menuWidget('Games')
+                                          self.systemsWidgetCallback,
+                                          hasFilter=False)
+        self.gamesMenu = self.emptyBoxWidget('Games')# self.menuWidget('Games')
         self.gameEditWidget = self.mainEditWidget()
         self.blankWidget = self.emptyBoxWidget('Game Information')
 
@@ -1079,6 +1081,7 @@ class GameslistGUI(object):
 
     def updateFooterText(self, text):
 
+        text = str(text) if not isinstance(text, basestring) else text
         text = urwid.Text(' ' + text)
         text = urwid.AttrMap(text, 'footerText')
         self.footer.original_widget = text
@@ -1129,14 +1132,33 @@ class GameslistGUI(object):
 
     # - Widgets ---------------------------------------------------------------
 
-    def menuWidget(self, title, choices=[], callback=None):
+    def menuWidget(self, title, choices=[], callback=None, hasFilter=True):
 
         body = self.menuButtonList(choices, callback)
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
-        widget = self.lineBoxWrap(box, title)
 
-        return widget
+        menu = urwid.WidgetPlaceholder(box)
+
+        if hasFilter:
+            editWidget = urwid.Edit(u'\u1401 ', u'', multiline=False)
+            widget = urwid.Pile([('pack', editWidget), menu])
+            urwid.connect_signal(editWidget, 'change',
+                                 self.filterMenu, user_args=[menu, body])
+        else:
+            widget = menu
+
+        return self.lineBoxWrap(widget, title)
+
+    def filterMenu(self, menu, buttons, widget, filterText):
+
+        body = list()
+        for b in buttons:
+            if filterText.lower() in b.original_widget.get_label().lower():
+                body.append(b)
+
+        lw = urwid.SimpleFocusListWalker(body)
+        menu.original_widget = urwid.ListBox(lw)
 
     def buttonsWidget(self):
 
@@ -1745,7 +1767,8 @@ class GameslistGUI(object):
             self.systemMenu.original_widget = self.menuWidget(
                     'Game Systems',
                     self.systems,
-                    self.systemsWidgetCallback
+                    self.systemsWidgetCallback,
+                    hasFilter = False
                     )
             self.updateFooterText('created: ' + choice)
         else:
