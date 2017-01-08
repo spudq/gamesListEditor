@@ -709,6 +709,22 @@ class ManageGameListXML(object):
             else:
                 yield self.getData(node, 'path')
 
+    def getGamesWithMissingData(self, missingData=None):
+
+        missingData = missingData or ['image',
+                                      'releasedate',
+                                      'developer',
+                                      'publisher',
+                                      'genre',
+                                      'desc']
+
+        allGames = self.getGames()
+        for game in allGames:
+            data = self.getDataForGame(game)
+
+            if not all([data.get(k) for k in missingData]):
+                yield game
+
     def getDataForGame(self, gameName):
 
         node = self.__getNodeForGame__(gameName)
@@ -800,9 +816,9 @@ def test():
 
     system = 'mame-libretro'
     m = ManageGameListXML(system)
-    m.setGameTitlesFromDat()
-    print m.toxml()
-
+    m.getGamesWithMissingData(['desc'])
+    # m.setGameTitlesFromDat()
+    # print m.toxml()
 
     return
 
@@ -877,6 +893,7 @@ class GameslistGUI(object):
         self.systems = list(getSystems())
         self.xmlManagers = dict()
         self.feildsEdited = False
+        self.showOnlyMissingData = False
 
         self.panelOpen = False
 
@@ -1013,15 +1030,16 @@ class GameslistGUI(object):
     def saveGameXml(self, *args):
 
         if not self.currentSystem:
-            self.updateFooterText('no system data to update')
+            self.updateFooterText('no system xml active')
             return
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
-        if not xmlManager.changes:
-            self.updateFooterText('no changes to save')
-            return
+        # if not xmlManager.changes:
+            # self.updateFooterText('no changes to save')
+            # return
 
+        self.updateGameXml()
         xmlpath = xmlManager.xmlpath
         xmlManager.writeXML()
         self.updateFooterText('wrote: ' + xmlpath)
@@ -1142,9 +1160,9 @@ class GameslistGUI(object):
 
         if hasFilter:
             editWidget = urwid.Edit(u'\u1401 ', u'', multiline=False)
-            widget = urwid.Pile([('pack', editWidget), menu])
             urwid.connect_signal(editWidget, 'change',
                                  self.filterMenu, user_args=[menu, body])
+            widget = urwid.Pile([('pack', editWidget), menu])
         else:
             widget = menu
 
@@ -1342,6 +1360,9 @@ class GameslistGUI(object):
             blank,
             urwid.AttrMap(urwid.Text('<esc>'), 'bodyText'),
             urwid.Text('Cancel Popup'),
+            blank,
+            urwid.AttrMap(urwid.Text('<alt+m>'), 'bodyText'),
+            urwid.Text('Toggle missing only mode (games with empty data fields)'),
             ]
 
         lw = urwid.SimpleFocusListWalker(body)
@@ -1647,6 +1668,17 @@ class GameslistGUI(object):
         if key == 'meta t':
             self.addSystemNamesFromDat()
 
+        if key == 'meta m':
+            switch = False if self.showOnlyMissingData else True
+            self.showOnlyMissingData = switch
+            if self.showOnlyMissingData:
+                msg = 'Showing only games with missing fields'
+                self.updateFooterText(msg)
+            else:
+                msg = 'Showing all games'
+                self.updateFooterText(msg)
+            self.refreshGames()
+
     def checkForChanges(self):
 
         output = dict()
@@ -1717,12 +1749,18 @@ class GameslistGUI(object):
         self.currentSystem = choice
         self.currentGame = None
 
+        mngr = self.getOrMakeManager(choice)
+        mode = self.showOnlyMissingData
+        games = mngr.getGamesWithMissingData() if mode else mngr.getGames()
+
         self.gameEditHolder.original_widget = self.blankWidget
         games = sorted(
-            self.getOrMakeManager(choice).getGames(),
+            games,
             key=lambda s: s.lower()
                 )
-        widget = self.menuWidget('Games ({})'.format(self.currentSystem), games, self.gamesWidgetCallback)
+        widget = self.menuWidget('Games ({})'.format(self.currentSystem),
+                                 games,
+                                 self.gamesWidgetCallback)
         self.gamesMenu.original_widget = widget
         self.updateFooterText(getGamelist(choice))
 
