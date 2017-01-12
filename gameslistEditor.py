@@ -51,6 +51,11 @@ SCRAPER_USE_EXISTING_IMAGES = True
 
 EXTERNAL_EDITOR = 'vim'
 
+MISS_DATA_FIELDS = ['image', 'releasedate', 'developer',
+                    'publisher', 'genre', 'desc']
+
+MISS_DATA_FIELDS = ['image']
+
 ARCADE_DAT_FILE = {
         'mame-mame4all': None,
         'mame-advmame': None,
@@ -711,13 +716,7 @@ class ManageGameListXML(object):
 
     def getGamesWithMissingData(self, missingData=None):
 
-        missingData = missingData or ['image',
-                                      'releasedate',
-                                      'developer',
-                                      'publisher',
-                                      'genre',
-                                      'desc']
-
+        missingData = missingData or MISS_DATA_FIELDS
         allGames = self.getGames()
         for game in allGames:
             data = self.getDataForGame(game)
@@ -1093,7 +1092,8 @@ class GameslistGUI(object):
 
     def refreshGames(self):
 
-        self.systemsWidgetCallback(None, self.currentSystem)
+        if self.currentSystem:
+            self.systemsWidgetCallback(None, self.currentSystem)
 
     # - Widget helpers --------------------------------------------------------
 
@@ -1762,7 +1762,8 @@ class GameslistGUI(object):
                                  games,
                                  self.gamesWidgetCallback)
         self.gamesMenu.original_widget = widget
-        self.updateFooterText(getGamelist(choice))
+        txt = '{}, {} games listed'.format(getGamelist(choice), len(games))
+        self.updateFooterText(txt)
 
         edited = self.feildsEdited  # mute callback
         for tag in GAMELIST_TAGS:
