@@ -682,9 +682,6 @@ class ManageGameListXML(object):
             for item in d:
                 parentNode.removeChild(item)
             return
-
-        # value = value.encode('utf-8')
-
         if d:
             if d[0].childNodes:
                 d[0].firstChild.data = value
@@ -703,7 +700,6 @@ class ManageGameListXML(object):
 
         d = parentNode.getElementsByTagName(name)
         data = d[0].firstChild.data if d and d[0].firstChild else None
-        # data = data.encode('utf-8') if data else None
         return data
 
     def getGames(self, asName=True):
@@ -813,31 +809,6 @@ class ManageGameListXML(object):
 
 def test():
 
-    system = 'mame-libretro'
-    m = ManageGameListXML(system)
-    m.getGamesWithMissingData(['desc'])
-    # m.setGameTitlesFromDat()
-    # print m.toxml()
-
-    return
-
-    system = 'snes'
-    m = ManageGameListXML(system)
-    # m.toxml()
-    # return
-    game = [i for i in list(m.getGames()) if 'mon' in i.lower()][0]
-
-    s = Scraper(system, simplifySearchString(game))
-    s.gameSearch()
-
-    sg = s.getGames()[0]
-    info = s.getGameInfo(sg)
-
-    m.setDataForGame(game, info)
-    m.writeXML('//RetroPie/roms/text.xml')
-
-    return
-
     system = 'nes'
 
     # manager
@@ -859,7 +830,6 @@ def test():
     pprint(s.getGameInfo(game))
     url = s.getBoxArtUrl(game)
 
-    # outputPath = ROMS_DIR + os.sep + 'testBoxArt'
     fp, xp = s.downloadArt(url, 'test')
     print fp
 
@@ -900,7 +870,7 @@ class GameslistGUI(object):
         self.systemMenu = self.menuWidget('Game Systems', self.systems,
                                           self.systemsWidgetCallback,
                                           hasFilter=False)
-        self.gamesMenu = self.emptyBoxWidget('Games')# self.menuWidget('Games')
+        self.gamesMenu = self.emptyBoxWidget('Games')
         self.gameEditWidget = self.mainEditWidget()
         self.blankWidget = self.emptyBoxWidget('Game Information')
 
@@ -1033,17 +1003,16 @@ class GameslistGUI(object):
             return
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
-
-        # if not xmlManager.changes:
-            # self.updateFooterText('no changes to save')
-            # return
-
         self.updateGameXml()
         xmlpath = xmlManager.xmlpath
         xmlManager.writeXML()
         self.updateFooterText('wrote: ' + xmlpath)
 
     def updateGameXml(self):
+
+        if not self.name.get_edit_text():
+            p, n, e = pathSplit(self.path.get_edit_text())
+            self.name.set_edit_text(n)
 
         if not self.feildsEdited:
             self.updateFooterText('no feilds edited')
@@ -1257,7 +1226,6 @@ class GameslistGUI(object):
         widget = self.menuWidget(
                 'Add System', choices=dirs,
                 callback=self.addSystemWidgetCallback)
-        # widget = urwid.AttrMap(widget, 'bodyColor')
         return widget
 
     # - pop-up stuffs ---------------------------------------------------------
@@ -1408,7 +1376,6 @@ class GameslistGUI(object):
             desc = self.desc.get_edit_text()
             with tempfile.NamedTemporaryFile(delete=False) as f:
                 path = f.name
-                # f.write(desc)
                 f = codecs.lookup('utf-8')[3](f)
                 f.write(desc)
             self.updateFooterText(u'editing desc...')
@@ -1754,10 +1721,7 @@ class GameslistGUI(object):
         games = mngr.getGamesWithMissingData() if mode else mngr.getGames()
 
         self.gameEditHolder.original_widget = self.blankWidget
-        games = sorted(
-            games,
-            key=lambda s: s.lower()
-                )
+        games = sorted(games, key=lambda s: s.lower())
         widget = self.menuWidget('Games ({})'.format(self.currentSystem),
                                  games,
                                  self.gamesWidgetCallback)
