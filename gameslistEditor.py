@@ -54,8 +54,6 @@ EXTERNAL_EDITOR = 'vim'
 MISS_DATA_FIELDS = ['image', 'releasedate', 'developer',
                     'publisher', 'genre', 'desc']
 
-MISS_DATA_FIELDS = ['image']
-
 ARCADE_DAT_FILE = {
         'mame-mame4all': None,
         'mame-advmame': None,
@@ -713,12 +711,12 @@ class ManageGameListXML(object):
     def getGamesWithMissingData(self, missingData=None):
 
         missingData = missingData or MISS_DATA_FIELDS
-        allGames = self.getGames()
-        for game in allGames:
-            data = self.getDataForGame(game)
-
-            if not all([data.get(k) for k in missingData]):
-                yield game
+        for node in self.dom.getElementsByTagName('game'):
+            name = self.getData(node, 'name')
+            for tag in missingData:
+                if not self.getData(node, tag):
+                    yield name
+                    break
 
     def getDataForGame(self, gameName):
 
@@ -808,6 +806,16 @@ class ManageGameListXML(object):
 
 
 def test():
+
+    data = ['releasedate']
+
+    system = 'atari2600'
+    m = ManageGameListXML(system)
+
+    for game in m.getGamesWithMissingData(missingData=data):
+        print game
+
+    return
 
     system = 'nes'
 
@@ -1575,7 +1583,7 @@ class GameslistGUI(object):
         '''
 
         # show key names
-        # self.updateFooterText(str(key))
+        self.updateFooterText(str(key))
         # return
 
         if key == 'f1':
@@ -1589,7 +1597,7 @@ class GameslistGUI(object):
         if key in ('f3', 'i', 'I'):
             self.addMissingGames()
 
-        if key in ('f4', 'u', 'meta s'):
+        if key in ('f4', 'u', 'meta s', 'ctrl s'):
             popup = self.saveWindow()
             self.togglePopupWindow(popup, 90, 15)
 
@@ -1632,10 +1640,10 @@ class GameslistGUI(object):
             if self.panelOpen:
                 self.closePopupWindow()
 
-        if key == 'meta t':
+        if key in ('meta t', 'ctrl t'):
             self.addSystemNamesFromDat()
 
-        if key == 'meta m':
+        if key in ('meta m', 'ctrl m'):
             switch = False if self.showOnlyMissingData else True
             self.showOnlyMissingData = switch
             if self.showOnlyMissingData:
