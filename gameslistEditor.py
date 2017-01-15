@@ -870,7 +870,7 @@ class GameslistGUI(object):
         self.systems = list(getSystems())
         self.xmlManagers = dict()
         self.feildsEdited = False
-        self.showOnlyMissingData = False
+        self.showOnlyMissingData = []
 
         self.panelOpen = False
 
@@ -1563,7 +1563,46 @@ class GameslistGUI(object):
 
         return widget
 
+    def filtersMenuPopup(self):
+
+        boxes = ['image', 'rating', 'releasedate', 'developer',
+                 'publisher', 'genre', 'players', 'desc']
+
+        t = ('Choose which fields to filter. When checked the Games list will '
+             'only show a game when one of these fields is missing data.')
+
+        abutton = urwid.Button('Close', self.closePopupWindow)
+        abutton = urwid.AttrMap(abutton, None, focus_map='activeButton')
+
+        blank = urwid.Divider()
+
+        body = [blank, urwid.Text(t), blank]
+        for box in boxes:
+            state = box in self.showOnlyMissingData
+            cb = urwid.CheckBox(box, state, False, self.filterCheckStateChanged)
+            body.append(cb)
+        body += [blank, abutton]
+
+        lw = urwid.SimpleFocusListWalker(body)
+        box = urwid.ListBox(lw)
+        widget = urwid.Padding(box, left=2, right=2)
+        widget = self.lineBoxWrap(widget, 'Filter for missing data')
+        return widget
+
     # - callbacks -------------------------------------------------------------
+
+    def filterCheckStateChanged(self, widget, state, *args):
+
+        lab = widget.get_label()
+        if state:
+            if not lab in self.showOnlyMissingData:
+                self.showOnlyMissingData.append(lab)
+        else:
+            if lab in self.showOnlyMissingData:
+                self.showOnlyMissingData.remove(lab)
+
+        self.updateFooterText(str(self.showOnlyMissingData))
+        self.refreshGames()
 
     def keypress(self, key):
 
@@ -1654,6 +1693,11 @@ class GameslistGUI(object):
                 self.updateFooterText(msg)
             self.refreshGames()
 
+        if key in ('meta f', 'ctrl f'):
+
+            popup = self.filtersMenuPopup()
+            self.togglePopupWindow(popup)
+
     def checkForChanges(self):
 
         output = dict()
@@ -1726,7 +1770,7 @@ class GameslistGUI(object):
 
         mngr = self.getOrMakeManager(choice)
         mode = self.showOnlyMissingData
-        games = mngr.getGamesWithMissingData() if mode else mngr.getGames()
+        games = mngr.getGamesWithMissingData(mode) if mode else mngr.getGames()
 
         self.gameEditHolder.original_widget = self.blankWidget
         games = sorted(games, key=lambda s: s.lower())
