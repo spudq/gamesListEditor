@@ -39,7 +39,7 @@ from functools import partial
 # - User Settings -------------------------------------------------------------
 
 ROMS_DIR = '//retropie/roms'
-# ROMS_DIR = '/cygdrive/d/Games/Emulation/RetroPie/gamesListEditor/test'
+# ROMS_DIR = '/home/pi/roms'
 
 IMAGE_DIR = os.path.join(ROMS_DIR, '{system}', 'downloaded_images')
 IMAGE_DIR_FULL = os.path.join(ROMS_DIR, '{system}', 'downloaded_images_large')
@@ -297,7 +297,17 @@ def readableDateToEsString(dateStr):
 
     # TODO: use datetime module instead
 
+    if not dateStr:
+        return None
+
     dateStr = re.findall(r'[\w]+', dateStr)
+
+    if len(dateStr) == 1:
+        # assume it's just the year
+        if len(dateStr[0]) == 2:
+            dateStr[0] = '19' + dateStr[0]
+        if len(dateStr[0]) == 4:
+            dateStr = ['01', '01'] + dateStr
 
     if not len(dateStr) == 3:
         return None
@@ -314,6 +324,7 @@ def readableDateToEsString(dateStr):
         else:
             return None
 
+    mm = mm.zfill(2)
     dd = dd.zfill(2)
     rdate = yyyy+mm+dd + u'T000000'
     return rdate
@@ -791,16 +802,35 @@ class ManageGameListXML(object):
         for gameTag in parse(datPath).getElementsByTagName('game'):
             if gameTag.hasAttribute('name'):
                 name = gameTag.getAttribute('name')
-                subTag = gameTag.getElementsByTagName('description')
-                if not subTag:
-                    continue
                 datData.setdefault(name, {})
-                datData[name]['gameName'] = subTag[0].firstChild.data
+                tag = gameTag.getElementsByTagName('description')
+                if tag:
+                    datData[name]['gameName'] = tag[0].firstChild.data
+                tag = gameTag.getElementsByTagName('year')
+                if tag:
+                    datData[name]['year'] = tag[0].firstChild.data
+                tag = gameTag.getElementsByTagName('manufacturer')
+                if tag:
+                    datData[name]['manufacturer'] = tag[0].firstChild.data
 
         for gamePath, oldName in zip(self.getGames(False), self.getGames(True)):
             p, baseName, ext = pathSplit(gamePath)
-            newName = datData.get(baseName, {}).get('gameName', oldName)
-            self.setDataForGame(oldName, dict(name=newName))
+            gameData = self.getDataForGame(oldName)
+            gameDatData = datData.get(baseName, {})
+            dataToSet = dict()
+            if not gameData.get('releasedate'):
+                date = readableDateToEsString(gameDatData.get('year'))
+                if date:
+                    dataToSet['releasedate'] = date
+            if not gameData.get('developer'):
+                dev = gameDatData.get('manufacturer')
+                if dev:
+                    dataToSet['developer'] = dev
+            newName = gameDatData.get('gameName', oldName)
+            if newName:
+                dataToSet['name'] = newName
+            self.setDataForGame(oldName, dataToSet)
+
 
 # - Temp Function -------------------------------------------------------------
 
@@ -809,13 +839,16 @@ def test():
 
     data = ['releasedate']
 
-    system = 'atari2600'
+    system = 'mame-libretro'
     m = ManageGameListXML(system)
 
-    for game in m.getGamesWithMissingData(missingData=data):
-        print game
+    # for game in m.getGamesWithMissingData(missingData=data):
+        # print game
+
+    m.setGameTitlesFromDat()
 
     return
+
 
     system = 'nes'
 
@@ -895,6 +928,10 @@ class GameslistGUI(object):
         # footer
         self.footer = urwid.Text('')
         self.footer = urwid.AttrMap(self.footer, 'footerText')
+
+        self.header = urwid.Text('')
+        self.header = urwid.AttrMap(self.header, 'footerText')
+
         self.frameWidget = urwid.Frame(
                 pwidget, header=None, footer=self.footer)
         self.frameWidget = self.main_shadow(self.frameWidget)
@@ -1357,13 +1394,19 @@ class GameslistGUI(object):
         else:
             return self.emptyBoxWidget('No System Chosen', '')
 
-    def editXMLExternal(self, *args):
+    def saveAndEditXmlExternal(self, *args):
 
-        gm = self.getOrMakeManager(self.currentSystem)
-        if gm.changes:
-            self.updateFooterText('Changes, would be lost')
+        if not self.currentSystem:
+            self.updateFooterText('No system chosen')
             return
 
+        popup = self.saveWindow('Save changes and edit in external editor?',
+                                self.editXmlExternal)
+        self.togglePopupWindow(popup, 90, 15)
+
+    def editXmlExternal(self, *args):
+
+        gm = self.getOrMakeManager(self.currentSystem)
         path = gm.xmlpath
 
         self.updateFooterText(u'editing...')
@@ -1500,25 +1543,27 @@ class GameslistGUI(object):
         widget = self.lineBoxWrap(fillerl, 'Review Changes')
         self.togglePopupWindow(widget, 70)
 
-    def saveWindow(self):
+    def saveWindow(self, title=None, postCallback=None):
 
         if not self.currentSystem:
             return self.emptyBoxWidget('no system chosen', '')
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
-        if not xmlManager.changes:
-            self.updateFooterText('no changes to save')
-            return self.emptyBoxWidget('no changes to save', '')
+        if not self.feildsEdited:
+            if not xmlManager.changes:
+                self.updateFooterText('no changes to save')
+                return self.emptyBoxWidget('no changes to save', '')
 
         path = xmlManager.xmlpath
 
-        text = 'Save Changes to...\n'
+        text = title or 'Save Changes to...'
+        text = text + '\n'
         text += path + '?\n'
 
         tw = urwid.Text(text)
 
-        btn_ok = urwid.Button('Ok', self.saveGameXmlCallback, None)
+        btn_ok = urwid.Button('Ok', self.saveGameXmlCallback, postCallback)
         btn_ok = urwid.AttrMap(btn_ok, None, focus_map='activeButton')
         btn_cancel = urwid.Button('Cancel', self.closePopupWindow)
         btn_cancel = urwid.AttrMap(btn_cancel, None, focus_map='activeButton')
@@ -1622,7 +1667,7 @@ class GameslistGUI(object):
         '''
 
         # show key names
-        self.updateFooterText(str(key))
+        # self.updateFooterText(str(key))
         # return
 
         if key == 'f1':
@@ -1651,7 +1696,7 @@ class GameslistGUI(object):
             self.togglePopupWindow(popup)
 
         if key == 'f7':
-            self.editXMLExternal()
+            self.saveAndEditXmlExternal()
 
         if key == 'f8':
             self.editDescriptionExternal()
@@ -1682,7 +1727,12 @@ class GameslistGUI(object):
         if key in ('meta t', 'ctrl t'):
             self.addSystemNamesFromDat()
 
+        text = urwid.Text(str(key))
+        text = urwid.AttrMap(text, 'footerText')
+        self.header.original_widget = text
+
         if key in ('meta m', 'ctrl m'):
+
             switch = False if self.showOnlyMissingData else True
             self.showOnlyMissingData = switch
             if self.showOnlyMissingData:
@@ -1755,8 +1805,9 @@ class GameslistGUI(object):
         self.updateFooterText(footerText)
         self.closePopupWindow()
 
-    def saveGameXmlCallback(self, button):
+    def saveGameXmlCallback(self, button, callback):
 
+        callback() if callback else None
         self.updateGameXml()
         self.saveGameXml()
         self.closePopupWindow()
