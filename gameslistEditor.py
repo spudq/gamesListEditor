@@ -118,7 +118,7 @@ ROM_EXTENSIONS = {
         'neogeo': [''],
         'oric': ['.dsk', '.tap'],
         'pc': ['.com', '.sh', '.bat', '.exe'],
-        'pcengine': ['.pce'],
+        'pcengine': ['.pce', '.cue', '.zip'],
         'psp': ['.cso', '.iso', '.pbp'],
         'psx': ['.cue', '.cbn', '.img', '.iso', '.m3u', '.mdf', '.pbp', '.toc',
                 '.z', '.znx'],
@@ -390,10 +390,19 @@ class Scraper(object):
         self.dom = None
         self.domValid = False
 
+    def __unicodeSafeify__(self, requestDict):
+
+        for key, value in requestDict.items():
+            if isinstance(value, basestring):
+                requestDict[key] = value.encode('utf-8')
+        return requestDict
+
+
     def __makeRequest__(self, url, request={}, retrys=3):
 
+        request = self.__unicodeSafeify__(request)
         querry = urllib.urlencode(request)
-        headers = {'User-Agent': self.userAgent}
+        headers = {u'User-Agent': self.userAgent}
         request = urllib2.Request(url, querry, headers=headers)
 
         attempts = 0
@@ -439,14 +448,14 @@ class Scraper(object):
     def gameSearch(self, exactname=None):
 
         search = self.searchQuery
-        url = 'http://thegamesdb.net/api/GetGame.php'
+        url = u'http://thegamesdb.net/api/GetGame.php'
 
         if exactname:
-            querry = {'exactname': exactname,
-                      'platform': self.systemName}
+            querry = {u'exactname': exactname,
+                      u'platform': self.systemName}
         else:
-            querry = {'name': search,
-                      'platform': self.systemName}
+            querry = {u'name': search,
+                      u'platform': self.systemName}
 
         fileObject = self.__makeRequest__(url, querry)
         if not fileObject:
@@ -465,8 +474,8 @@ class Scraper(object):
         # Unfortunately GetGamesList doesn't return
         # all of the data needed so the game will need
         # to be searched all over again once the game name is found
-        url = 'http://thegamesdb.net/api/GetGamesList.php'
-        querry = {'name': search, 'platform': self.systemName}
+        url = u'http://thegamesdb.net/api/GetGamesList.php'
+        querry = {u'name': search, u'platform': self.systemName}
         fileObject = self.__makeRequest__(url, querry)
 
         self.dom = parse(fileObject)
@@ -593,8 +602,20 @@ class Scraper(object):
 
         # check if image alredy exists (use it)
         if SCRAPER_USE_EXISTING_IMAGES:
-            if os.path.exists(imgPathSmall):
-                return imgPathSmall, imgPathXML
+            # check to see if either a png or a jpg verison
+            # of the thumb already exists any case
+            xmlpath = IMAGE_DIR_XML.format(system=self.system)
+            path, name, ext = pathSplit(imgPathSmall)
+            for f in os.listdir(path):
+                fn, fext = os.path.splitext(f)
+                fn = fn + fext.lower()
+                for e in ['.png', '.jpg']:
+                    if name + e == fn:
+                        np = os.path.join(path, f)
+                        return np, os.path.join(xmlpath, f)
+
+            # if os.path.exists(imgPathSmall):
+            #    return imgPathSmall, imgPathXML
 
         # download image
         f = self.__makeRequest__(url)
@@ -661,6 +682,15 @@ class ManageGameListXML(object):
         self.system = system
         self.dom = parse(self.xmlpath)
         self.gameProperties = []
+        self.__validate__()
+
+    def __validate__(self):
+        ''' make sure there are no missing names
+        '''
+        for node in self.dom.getElementsByTagName('game'):
+            if not self.getData(node, 'name'):
+                value = self.getData(node, 'path')
+                self.setData(node, 'name', value)
 
     def __getNodeForGame__(self, game):
 
@@ -720,6 +750,8 @@ class ManageGameListXML(object):
                 yield self.getData(node, 'path')
 
     def getGamesWithMissingData(self, missingData=None):
+
+        # TODO check image exists
 
         missingData = missingData or MISS_DATA_FIELDS
         for node in self.dom.getElementsByTagName('game'):
@@ -836,6 +868,7 @@ class ManageGameListXML(object):
 
 
 def test():
+
 
     data = ['releasedate']
 
@@ -1071,6 +1104,7 @@ class GameslistGUI(object):
 
         xmlManager = self.getOrMakeManager(self.currentSystem)
 
+        # if self.name.get_edit_text() in list(xmlManager.getGames()):
         if self.currentGame not in list(xmlManager.getGames()):
             return
 
@@ -1480,8 +1514,15 @@ class GameslistGUI(object):
         # attempt to get country code from rom name (on disc)
         rom = self.path.get_edit_text()
         founds = re.findall(r'\(.*?\)', rom)
-        cc = GOODMERGE_COUNTRY_CODES.get(founds[0], u'') if founds else u''
+
+        ccs = list()
+        for found in founds:
+            ccs.append(GOODMERGE_COUNTRY_CODES.get(found, found))
+        cc = u' '.join(ccs)
         cc = u' ' + cc if cc else u''
+
+        # cc = GOODMERGE_COUNTRY_CODES.get(founds[0], u'') if founds else u''
+        # cc = u' ' + cc if cc else u''
 
         data = self.scrapeInstance.getGameInfo(choice)
         data['name'] += cc
@@ -1528,6 +1569,19 @@ class GameslistGUI(object):
             strings.append(u'\nChange To -->\n')
 
             for prop in newProps:
+                value = data.get(prop, u'')
+                strings.append(u'{}: {}'.format(prop, value))
+                results[prop] = value
+
+        if isinstance(self.scraperMode, (list, tuple)):
+
+            for prop in self.scraperMode:
+                value = getattr(self, prop).get_edit_text()
+                strings.append(u'{}: {}'.format(prop, value))
+
+            strings.append(u'\nChange To -->\n')
+
+            for prop in self.scraperMode:
                 value = data.get(prop, u'')
                 strings.append(u'{}: {}'.format(prop, value))
                 results[prop] = value
@@ -1582,7 +1636,7 @@ class GameslistGUI(object):
 
         matches = ['.png', '.jpg', '.jpeg']
         files = [f for f in files if os.path.splitext(f)[1].lower() in matches]
-        msg = 'Choose Image for:\n{}\n'.format(self.currentGame)
+        msg = u'Choose Image for:\n{}\n'.format(self.currentGame)
 
         msgtext = urwid.Text(msg)
         text = urwid.Text(directory)
@@ -1602,6 +1656,7 @@ class GameslistGUI(object):
 
         lw = urwid.SimpleFocusListWalker(body)
         box = urwid.ListBox(lw)
+        box.set_focus(len(body) - 1 - len(files))
 
         frameWidget = urwid.Frame(box, header=header, footer=None)
         widget = self.lineBoxWrap(frameWidget, 'Browse')
@@ -1717,6 +1772,11 @@ class GameslistGUI(object):
             popup = self.scraperChoices()
             self.togglePopupWindow(popup)
 
+        if key == 'D':
+            self.scraperMode = ['desc']
+            popup = self.scraperChoices()
+            self.togglePopupWindow(popup)
+
         if key == 'c':
             self.checkForChanges()
 
@@ -1733,6 +1793,9 @@ class GameslistGUI(object):
 
         if key in ('meta m', 'ctrl m'):
 
+            popup = self.filtersMenuPopup()
+            self.togglePopupWindow(popup)
+            return
             switch = False if self.showOnlyMissingData else True
             self.showOnlyMissingData = switch
             if self.showOnlyMissingData:
@@ -1805,7 +1868,7 @@ class GameslistGUI(object):
         self.updateFooterText(footerText)
         self.closePopupWindow()
 
-    def saveGameXmlCallback(self, button, callback):
+    def saveGameXmlCallback(self, button, callback=None):
 
         callback() if callback else None
         self.updateGameXml()
