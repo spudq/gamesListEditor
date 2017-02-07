@@ -38,8 +38,9 @@ from functools import partial
 
 # - User Settings -------------------------------------------------------------
 
-ROMS_DIR = '//retropie/roms'
-# ROMS_DIR = '/home/pi/roms'
+ROMS_DIR_WIN = '//retropie/roms'
+ROMS_DIR_PI = '/home/pi/RetroPie/roms'
+ROMS_DIR = ROMS_DIR_PI if os.path.exists(ROMS_DIR_PI) else ROMS_DIR_WIN
 
 IMAGE_DIR = os.path.join(ROMS_DIR, '{system}', 'downloaded_images')
 IMAGE_DIR_FULL = os.path.join(ROMS_DIR, '{system}', 'downloaded_images_large')
