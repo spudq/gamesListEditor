@@ -129,7 +129,7 @@ ROM_EXTENSIONS = {
         'saturn': ['.bin', '.iso', '.mdf'],
         'scummvm': ['.sh', '.svm'],
         'sega32x': ['.32x', '.smd', '.bin', '.md'],
-        'segacd': ['.cue', '.bin', '.iso'],
+        'segacd': ['.cue', '.iso'],
         'sg-1000': ['.sg', '.zip'],
         'snes': ['.zip', '.smc', '.sfc', '.fig', '.swc'],
         'ti99': ['.ctg'],
