@@ -27,5 +27,6 @@ for img in glob.glob(root + '/RetroPie/roms/*/downloaded_images_large/*'):
         continue
 
     print 'ln -s', fn
-    os.symlink(img, targetLinkName)
+    if not os.path.exists(targetLinkName):
+        os.symlink(img, targetLinkName)
 

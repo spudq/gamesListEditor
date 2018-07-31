@@ -69,7 +69,7 @@ MONTHS = ['jan', 'feb', 'mar', 'apr',
           'sep', 'oct', 'nov', 'dec']
 
 # game data tags to extract from gamelist.xml files
-GAMELIST_TAGS = ['path', 'name', 'image', 'rating', 'releasedate',
+GAMELIST_TAGS = ['path', 'name', 'kidgame', 'favorite', 'hidden', 'image', 'rating', 'releasedate',
                  'developer', 'publisher', 'genre', 'players',
                  'playcount', 'lastplayed', 'desc']
 
@@ -535,6 +535,10 @@ class Scraper(object):
             'publisher':   self.__xmlValue__(gameNode, 'Publisher'),
             'players':     self.__xmlValue__(gameNode, 'Players'),
             'desc':        self.__xmlValue__(gameNode, 'Overview'),
+            # new
+            'kidgame':     self.__xmlValue__(gameNode, 'kidgame'),
+            'favorite':    self.__xmlValue__(gameNode, 'favorite'),
+            'hidden':      self.__xmlValue__(gameNode, 'hidden'),
             }
 
     def getBoxArtUrl(self, exactName):
@@ -871,6 +875,7 @@ class ManageGameListXML(object):
 def test():
 
 
+    '''
     data = ['releasedate']
 
     system = 'mame-libretro'
@@ -882,6 +887,7 @@ def test():
     m.setGameTitlesFromDat()
 
     return
+    '''
 
 
     system = 'nes'
@@ -898,12 +904,16 @@ def test():
     s.gameSearch()
     print 'Done searching...'
 
+    print s.getGames()
+    return
+
     # get game result from scraper search
     games = s.getGames()
     game = games[0]
 
     pprint(s.getGameInfo(game))
     url = s.getBoxArtUrl(game)
+    print url
 
     fp, xp = s.downloadArt(url, 'test')
     print fp
@@ -1112,7 +1122,14 @@ class GameslistGUI(object):
         # get field data
         data = dict()
         for tag in GAMELIST_TAGS:
-            data[tag] = getattr(self, tag).get_edit_text()
+            widget = getattr(self, tag)
+
+            if isinstance(widget, urwid.Edit):
+                data[tag] = widget.get_edit_text()
+
+            if isinstance(widget, urwid.CheckBox):
+                value = u'true' if widget.state else u'false'
+                data[tag] = value 
 
         releasedate = data.get('releasedate')
         data['releasedate'] = readableDateToEsString(releasedate)
@@ -1182,6 +1199,21 @@ class GameslistGUI(object):
             return urwid.Columns([(u'pack', labelWidget), (l, button), map])
         else:
             return urwid.Columns([(u'pack', labelWidget), map])
+
+    def checkbox(self, var, label=None, callback=None):
+
+        ''' ccc
+        '''
+
+        label = label or var
+        cb = urwid.CheckBox(label)
+
+        if callback:
+            urwid.connect_signal(cb, 'change', callback)
+
+        setattr(self, var, cb)
+
+        return cb
 
     def minimalButton(self, label, callback=None):
 
@@ -1269,6 +1301,13 @@ class GameslistGUI(object):
 
         blank = urwid.Divider()
 
+        checkboxes = urwid.Columns([
+                self.checkbox(u'kidgame', callback=self.editCallback),
+                self.checkbox(u'favorite', callback=self.editCallback),
+                self.checkbox(u'hidden', callback=self.editCallback),
+                blank,
+                ])
+
         body = [
             blank, self.field(u'path', callback=self.editCallback),
             blank, self.field(u'name', callback=self.nameEditCallback),
@@ -1277,6 +1316,7 @@ class GameslistGUI(object):
                 buttonCallback=partial(self.bottomButtonsCallback, 'b'),
                 callback=self.editCallback
                 ),
+            blank, checkboxes,  # << checkboxes
             blank, self.field(u'rating', callback=self.editCallback),
             blank, self.field(
                 u'releasedate',
@@ -1897,8 +1937,16 @@ class GameslistGUI(object):
         self.updateFooterText(txt)
 
         edited = self.feildsEdited  # mute callback
+
         for tag in GAMELIST_TAGS:
-            getattr(self, tag).set_edit_text(u'')
+            widget = getattr(self, tag)
+
+            if isinstance(widget, urwid.Edit):
+                widget.set_edit_text(u'')
+
+            if isinstance(widget, urwid.CheckBox):
+                widget.set_state(False)
+
         self.feildsEdited = edited
 
     def gamesWidgetCallback(self, button, choice):
@@ -1923,9 +1971,17 @@ class GameslistGUI(object):
         edited = self.feildsEdited  # mute callback
         releasedate = data.get('releasedate')
         data['releasedate'] = esStringToReadableDate(releasedate)
+
         for tag in GAMELIST_TAGS:
+
             widget = getattr(self, tag)
-            widget.set_edit_text(data.get(tag, u''))
+            result = data.get(tag, u'')
+
+            if isinstance(widget, urwid.Edit):
+                widget.set_edit_text(result)
+
+            if isinstance(widget, urwid.CheckBox):
+                widget.set_state(True if result == 'true' else False)
 
         self.feildsEdited = edited
 
@@ -1960,6 +2016,7 @@ class GameslistGUI(object):
 
     def editCallback(self, widget, string, *args):
 
+        # self.updateFooterText(string)
         self.feildsEdited = True
 
     def nameEditCallback(self, widget, string, *args):
