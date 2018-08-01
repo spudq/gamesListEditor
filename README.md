@@ -2,7 +2,10 @@
 Text Based gamesList.xml Editor works in terminal emulator, eg. (putty, cygwin, maybe more)
 
 Requires Urwid to be installed in python
-Requires ImageMagick installed on system
+
+~~Requires ImageMagick installed on system~~
+
+Scraper no longer works :worried: either need to re-write it or remove it. 
 
 #### To install ssh into pie and run...
 - get clone https://github.com/spudq/piTools.git 
