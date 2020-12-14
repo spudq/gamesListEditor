@@ -2,6 +2,7 @@
 Text Based gamesList.xml Editor works in terminal emulator, eg. (putty, cygwin, maybe more)
 
 Requires Urwid to be installed in python
+```sudo apt-get install python-urwid```
 
 ~~Requires ImageMagick installed on system~~
 
