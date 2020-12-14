@@ -9,11 +9,9 @@ Requires Urwid to be installed in python
 Scraper no longer works :worried: either need to re-write it or remove it. 
 
 #### To install ssh into pie and run...
-- get clone https://github.com/spudq/piTools.git 
-- sudo apt-get install python-pip
-- sudo apt-get install imagemagick
-- pip install urwid
-
+- `git clone https://github.com/spudq/piTools.git`
+- `sudo apt-get install python-pip` or `pip install urwid`
+- `sudo apt-get install imagemagick`
 
 #### Run Via Python
 - cd piTools
